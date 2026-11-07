@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Paramètres · MC Manager{% endblock %}
+{% block content %}
+<h1>Paramètres</h1>
+<div class="panel">
+  <h2>Emplacement des données</h2>
+  <form method="post" class="form">{% csrf_token %}
+    {{ form.non_field_errors }}
+    {% for field in form %}
+      {% if field.name != 'move_existing' %}
+      <p>{{ field.label_tag }} {{ field }}
+        {% if field.help_text %}<br><span class="helptext">{{ field.help_text }}</span>{% endif %}
+        {{ field.errors }}</p>
+      {% endif %}
+    {% endfor %}
+    {% if has_servers %}
+    <p class="check">{{ form.move_existing }} {{ form.move_existing.label_tag }}<br>
+      <span class="helptext">Les serveurs doivent être arrêtés. Sans cette case, les serveurs existants repartiront avec un monde vide dans le nouveau dossier.</span></p>
+    {% endif %}
+    <button class="btn primary">Enregistrer</button>
+  </form>
+</div>
+<div class="panel">
+  <h2>Espace disque</h2>
+  <table>
+    {% for label, path, d in disks %}
+    <tr><td>{{ label }}</td><td><code>{{ path }}</code></td>
+      <td>{% if d %}{{ d.free_gb }} Go libres sur {{ d.total_gb }} Go{% else %}<span class="muted">inaccessible</span>{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="muted">Image utilisée : <code>docker.io/itzg/minecraft-server:latest</code> · journal des erreurs : <code>~/mcmanager/logs/mcmanager.log</code></p>
+</div>
+{% endblock %}

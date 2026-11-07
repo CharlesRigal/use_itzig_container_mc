@@ -1,8 +1,11 @@
+import getpass
+from pathlib import Path
+
 from django import forms
 from django.conf import settings
 from django.utils.text import slugify
 
-from .models import Server, player_name_validator
+from .models import AppSettings, Server, player_name_validator
 
 SERVER_FIELDS = [
     "name", "port", "type", "version", "memory", "max_players", "difficulty",
@@ -38,6 +41,49 @@ class ServerCreateForm(ServerForm):
             raise forms.ValidationError("Un serveur porte déjà ce nom.")
         self.instance.slug = slug
         return name
+
+
+def _check_dir(value):
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        raise forms.ValidationError("Donne un chemin absolu, par exemple /data/minecraft/servers.")
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+        probe = path / ".mcmanager-write-test"
+        probe.write_text("ok")
+        probe.unlink()
+    except OSError as exc:
+        raise forms.ValidationError(
+            f"Dossier inutilisable ({exc.strerror}). Vérifie qu'il existe et appartient à l'utilisateur {getpass.getuser()}."
+        )
+    return str(path.resolve())
+
+
+class AppSettingsForm(forms.ModelForm):
+    move_existing = forms.BooleanField(
+        label="déplacer les mondes et sauvegardes existants vers les nouveaux dossiers",
+        required=False,
+        initial=True,
+    )
+
+    class Meta:
+        model = AppSettings
+        fields = ["data_root", "backup_root"]
+
+    def clean_data_root(self):
+        return _check_dir(self.cleaned_data["data_root"])
+
+    def clean_backup_root(self):
+        return _check_dir(self.cleaned_data["backup_root"])
+
+    def clean(self):
+        data = super().clean()
+        a, b = data.get("data_root"), data.get("backup_root")
+        if a and b:
+            pa, pb = Path(a), Path(b)
+            if pa == pb or pa in pb.parents or pb in pa.parents:
+                raise forms.ValidationError("Les deux dossiers doivent être distincts et non imbriqués.")
+        return data
 
 
 class PlayerForm(forms.Form):

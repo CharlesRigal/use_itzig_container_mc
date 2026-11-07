@@ -84,8 +84,30 @@ LOGIN_URL = "login"
 LOGIN_REDIRECT_URL = "server_list"
 LOGOUT_REDIRECT_URL = "login"
 
+LOG_DIR = BASE_DIR / "logs"
+LOG_DIR.mkdir(exist_ok=True)
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {"plain": {"format": "%(asctime)s %(levelname)s %(name)s: %(message)s"}},
+    "handlers": {
+        "file": {
+            "class": "logging.handlers.RotatingFileHandler",
+            "filename": LOG_DIR / "mcmanager.log",
+            "maxBytes": 2_000_000,
+            "backupCount": 3,
+            "formatter": "plain",
+        },
+    },
+    "loggers": {
+        "django": {"handlers": ["file"], "level": "WARNING"},
+        "servers": {"handlers": ["file"], "level": "INFO"},
+    },
+}
+
 # Minecraft
-MC_IMAGE = os.environ.get("MCM_IMAGE", "docker.io/itzg/minecraft-server:latest")
+MC_IMAGE = "docker.io/itzg/minecraft-server:latest"
+# Valeurs initiales : les dossiers se règlent ensuite dans la page Paramètres.
 MC_DATA_ROOT = Path(os.environ.get("MCM_DATA_ROOT", BASE_DIR / "data" / "servers"))
 MC_BACKUP_ROOT = Path(os.environ.get("MCM_BACKUP_ROOT", BASE_DIR / "data" / "backups"))
 MC_TZ = TIME_ZONE

@@ -1,6 +1,8 @@
+import logging
 import shlex
 import shutil
 import tarfile
+from pathlib import Path
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
@@ -10,14 +12,18 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from . import backups, podman
-from .forms import CommandForm, PlayerForm, ServerCreateForm, ServerForm, next_free_port
-from .models import DefaultWhitelistEntry, Server, WhitelistEntry
+from .forms import AppSettingsForm, CommandForm, PlayerForm, ServerCreateForm, ServerForm, next_free_port
+from .models import AppSettings, DefaultWhitelistEntry, Server, WhitelistEntry
+
+
+log = logging.getLogger("servers")
 
 
 def _podman_action(request, func, *args, success=None):
     try:
         result = func(*args)
     except (podman.PodmanError, OSError, tarfile.TarError) as exc:
+        log.exception("%s%s a échoué", func.__name__, args)
         messages.error(request, str(exc) or exc.__class__.__name__)
         return None
     if success:
@@ -224,6 +230,74 @@ def default_whitelist_apply(request, slug):
             _live_whitelist(request, server, "add", p.name)
     messages.success(request, f"{len(added)} joueur(s) ajouté(s) à « {server} ».")
     return redirect("server_detail", slug=slug)
+
+
+# --- paramètres de l'application ------------------------------------------------
+
+def _disk(path):
+    try:
+        u = shutil.disk_usage(path)
+    except OSError:
+        return None
+    return {"free_gb": round(u.free / 1e9, 1), "total_gb": round(u.total / 1e9, 1)}
+
+
+def _move_tree(old_root, new_root, slug):
+    src, dst = Path(old_root) / slug, Path(new_root) / slug
+    if not src.exists():
+        return
+    if dst.exists() and any(dst.iterdir()):
+        raise OSError(f"{dst} existe déjà et n'est pas vide.")
+    if dst.exists():
+        dst.rmdir()
+    shutil.move(str(src), str(dst))
+
+
+@login_required
+def app_settings(request):
+    current = AppSettings.get()
+    old = {"data_root": current.data_root, "backup_root": current.backup_root}
+    form = AppSettingsForm(request.POST or None, instance=current)
+    if request.method == "POST" and form.is_valid():
+        changed = [k for k in old if form.cleaned_data[k] != old[k]]
+        servers = list(Server.objects.all())
+        if changed and servers and form.cleaned_data["move_existing"]:
+            try:
+                states = podman.states()
+            except podman.PodmanError as exc:
+                messages.error(request, str(exc))
+                return redirect("app_settings")
+            running = [s.name for s in servers if states.get(s.container_name, {}).get("state") == "running"]
+            if running:
+                messages.error(request, "Arrête d'abord ces serveurs : " + ", ".join(running))
+                return redirect("app_settings")
+            try:
+                for key in changed:
+                    for s in servers:
+                        _move_tree(old[key], form.cleaned_data[key], s.slug)
+            except OSError as exc:
+                log.exception("déplacement des données")
+                messages.error(request, f"Déplacement interrompu : {exc}. Paramètres non modifiés.")
+                return redirect("app_settings")
+            # Les conteneurs pointent vers l'ancien dossier : on les recrée (arrêtés).
+            for s in servers:
+                _podman_action(request, podman.recreate, s)
+        form.save()
+        log.info("paramètres : %s", {k: form.cleaned_data[k] for k in old})
+        messages.success(request, "Paramètres enregistrés.")
+        return redirect("app_settings")
+    return render(
+        request,
+        "servers/settings.html",
+        {
+            "form": form,
+            "disks": [
+                ("Mondes", current.data_root, _disk(current.data_root)),
+                ("Sauvegardes", current.backup_root, _disk(current.backup_root)),
+            ],
+            "has_servers": Server.objects.exists(),
+        },
+    )
 
 
 # --- sauvegardes ---------------------------------------------------------------

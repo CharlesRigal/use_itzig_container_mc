@@ -5,6 +5,7 @@ from . import views
 urlpatterns = [
     path("", views.server_list, name="server_list"),
     path("new/", views.server_create, name="server_create"),
+    path("settings/", views.app_settings, name="app_settings"),
     path("whitelist/", views.default_whitelist, name="default_whitelist"),
     path("whitelist/<int:pk>/remove/", views.default_whitelist_remove, name="default_whitelist_remove"),
     path("s/<slug:slug>/", views.server_detail, name="server_detail"),

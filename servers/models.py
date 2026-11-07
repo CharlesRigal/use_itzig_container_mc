@@ -10,6 +10,34 @@ player_name_validator = RegexValidator(
 )
 
 
+class AppSettings(models.Model):
+    """Paramètres de l'application (une seule ligne, pk=1)."""
+
+    data_root = models.CharField(
+        "dossier des mondes", max_length=255,
+        help_text="Un sous-dossier par serveur y est créé, monté sur /data dans le conteneur.",
+    )
+    backup_root = models.CharField(
+        "dossier des sauvegardes", max_length=255,
+        help_text="Un sous-dossier par serveur, avec les archives .tar.gz.",
+    )
+
+    class Meta:
+        verbose_name = "paramètres"
+        verbose_name_plural = "paramètres"
+
+    def __str__(self):
+        return "Paramètres"
+
+    @classmethod
+    def get(cls):
+        obj, _ = cls.objects.get_or_create(
+            pk=1,
+            defaults={"data_root": str(settings.MC_DATA_ROOT), "backup_root": str(settings.MC_BACKUP_ROOT)},
+        )
+        return obj
+
+
 class Server(models.Model):
     TYPES = [
         ("VANILLA", "Vanilla"),
@@ -80,11 +108,11 @@ class Server(models.Model):
 
     @property
     def data_dir(self) -> Path:
-        return settings.MC_DATA_ROOT / self.slug
+        return Path(AppSettings.get().data_root) / self.slug
 
     @property
     def backup_dir(self) -> Path:
-        return settings.MC_BACKUP_ROOT / self.slug
+        return Path(AppSettings.get().backup_root) / self.slug
 
     def whitelist_names(self):
         return list(self.whitelist.values_list("name", flat=True))
