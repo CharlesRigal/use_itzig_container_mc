@@ -108,6 +108,28 @@ class Server(models.Model):
         "comptes officiels uniquement (online-mode)", default=True
     )
     whitelist_enabled = models.BooleanField("whitelist active", default=True)
+
+    MODPACK_SOURCES = [
+        ("none", "Aucun"),
+        ("curseforge", "Modpack CurseForge"),
+        ("modrinth", "Modpack Modrinth"),
+    ]
+    modpack_source = models.CharField("modpack", max_length=12, choices=MODPACK_SOURCES, default="none")
+    modpack_ref = models.CharField(
+        "lien ou slug du modpack", max_length=300, blank=True,
+        help_text="Ex. https://www.curseforge.com/minecraft/modpacks/all-the-mods-9 ou le slug. "
+                  "Le modpack décide du type et de la version : choisis Java à la main.",
+    )
+    curseforge_mods = models.TextField(
+        "mods CurseForge", blank=True,
+        help_text="Un par ligne : slug, id, id:fichier ou lien. Les dépendances ne sont pas ajoutées "
+                  "automatiquement : liste-les aussi. # pour un commentaire.",
+    )
+    modrinth_mods = models.TextField(
+        "mods Modrinth", blank=True,
+        help_text="Un par ligne : slug ou id (ex. lithium). Les dépendances requises sont ajoutées "
+                  "automatiquement.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -175,7 +197,48 @@ class Server(models.Model):
             env["WHITELIST"] = ",".join(names)
             # La liste de l'UI fait foi : whitelist.json est réécrit à chaque démarrage.
             env["EXISTING_WHITELIST_FILE"] = "SYNCHRONIZE"
+
+        # Mods : l'image télécharge tout au démarrage.
+        ref = self.modpack_ref.strip()
+        if self.modpack_source == "curseforge":
+            env["TYPE"] = "AUTO_CURSEFORGE"
+            env["CF_PAGE_URL" if ref.startswith("http") else "CF_SLUG"] = ref
+            del env["VERSION"]
+        elif self.modpack_source == "modrinth":
+            env["TYPE"] = "MODRINTH"
+            env["MODRINTH_MODPACK"] = ref
+            del env["VERSION"]
+        cf = mod_lines(self.curseforge_mods)
+        if cf:
+            env["CURSEFORGE_FILES"] = ",".join(cf)
+        mr = mod_lines(self.modrinth_mods)
+        if mr:
+            env["MODRINTH_PROJECTS"] = ",".join(mr)
+            env["MODRINTH_DOWNLOAD_DEPENDENCIES"] = "required"
+        if self.uses_curseforge:
+            env["CF_API_KEY_FILE"] = CF_KEY_IN_CONTAINER
         return env
+
+    @property
+    def uses_curseforge(self):
+        return self.modpack_source == "curseforge" or bool(mod_lines(self.curseforge_mods))
+
+
+CF_KEY_IN_CONTAINER = "/run/secrets/cf_api_key"
+
+
+def cf_key_file() -> Path:
+    return settings.BASE_DIR / "secrets" / "cf_api_key"
+
+
+def mod_lines(text):
+    """Lignes non vides, sans les commentaires # ."""
+    out = []
+    for line in (text or "").splitlines():
+        line = line.split("#", 1)[0].strip()
+        if line:
+            out.append(line)
+    return out
 
 
 class WhitelistEntry(models.Model):

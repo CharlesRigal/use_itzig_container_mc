@@ -10,6 +10,7 @@
     {% else %}
       <form class="inline" method="post" action="{% url 'server_action' server.slug 'start' %}">{% csrf_token %}<button class="btn primary">Démarrer</button></form>
     {% endif %}
+    <a class="btn" href="{% url 'server_files' server.slug %}">Configs et mods</a>
     <a class="btn danger" href="{% url 'server_delete' server.slug %}">Supprimer</a>
   </div>
 </div>
@@ -69,7 +70,7 @@
 <section class="panel">
   <h2>Paramètres</h2>
   <form method="post" class="form">{% csrf_token %}
-    {% include "servers/_form_fields.html" %}
+    {% include "servers/_server_form.html" %}
     <button class="btn primary">Enregistrer{% if st.state == 'running' %} et redémarrer{% endif %}</button>
   </form>
 </section>

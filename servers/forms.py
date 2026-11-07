@@ -5,12 +5,13 @@ from django import forms
 from django.conf import settings
 from django.utils.text import slugify
 
-from .models import AppSettings, Server, player_name_validator
+from .models import AppSettings, Server, cf_key_file, mod_lines, player_name_validator
 
 SERVER_FIELDS = [
     "name", "port", "type", "version", "java", "memory", "max_players", "difficulty",
     "gamemode", "motd", "view_distance", "pvp", "online_mode", "whitelist_enabled",
 ]
+MOD_FIELDS = ["modpack_source", "modpack_ref", "curseforge_mods", "modrinth_mods"]
 
 
 def next_free_port():
@@ -24,7 +25,27 @@ def next_free_port():
 class ServerForm(forms.ModelForm):
     class Meta:
         model = Server
-        fields = SERVER_FIELDS
+        fields = SERVER_FIELDS + MOD_FIELDS
+        widgets = {
+            "curseforge_mods": forms.Textarea(attrs={"rows": 5, "spellcheck": "false"}),
+            "modrinth_mods": forms.Textarea(attrs={"rows": 5, "spellcheck": "false"}),
+        }
+
+    def base_fields_list(self):
+        return [self[f] for f in SERVER_FIELDS]
+
+    def mod_fields_list(self):
+        return [self[f] for f in MOD_FIELDS]
+
+    def clean(self):
+        data = super().clean()
+        source = data.get("modpack_source")
+        if source and source != "none" and not data.get("modpack_ref", "").strip():
+            self.add_error("modpack_ref", "Indique le lien ou le slug du modpack.")
+        uses_cf = source == "curseforge" or mod_lines(data.get("curseforge_mods"))
+        if uses_cf and not cf_key_file().is_file():
+            raise forms.ValidationError("CurseForge demande une clé API : ajoute-la d'abord dans Paramètres.")
+        return data
 
 
 class ServerCreateForm(ServerForm):
@@ -65,10 +86,31 @@ class AppSettingsForm(forms.ModelForm):
         required=False,
         initial=True,
     )
+    cf_api_key = forms.CharField(
+        label="clé API CurseForge",
+        required=False,
+        widget=forms.PasswordInput(render_value=False, attrs={"autocomplete": "off"}),
+        help_text="Gratuite sur console.curseforge.com. Laisse vide pour garder la clé actuelle.",
+    )
+    cf_api_key_clear = forms.BooleanField(label="supprimer la clé enregistrée", required=False)
 
     class Meta:
         model = AppSettings
         fields = ["data_root", "backup_root"]
+
+    def save_cf_key(self):
+        path = cf_key_file()
+        if self.cleaned_data.get("cf_api_key_clear"):
+            path.unlink(missing_ok=True)
+            return "supprimée"
+        key = self.cleaned_data.get("cf_api_key", "").strip()
+        if key:
+            path.parent.mkdir(mode=0o700, exist_ok=True)
+            path.touch(mode=0o600, exist_ok=True)
+            path.write_text(key)
+            path.chmod(0o600)
+            return "enregistrée"
+        return None
 
     def clean_data_root(self):
         return _check_dir(self.cleaned_data["data_root"])

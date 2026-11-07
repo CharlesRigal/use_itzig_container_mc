@@ -11,9 +11,12 @@ from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
-from . import backups, podman
+from django.urls import reverse
+from django.utils.http import urlencode
+
+from . import backups, configs, podman
 from .forms import AppSettingsForm, CommandForm, PlayerForm, ServerCreateForm, ServerForm, next_free_port
-from .models import AppSettings, DefaultWhitelistEntry, Server, WhitelistEntry
+from .models import AppSettings, DefaultWhitelistEntry, Server, WhitelistEntry, cf_key_file
 
 
 log = logging.getLogger("servers")
@@ -232,6 +235,65 @@ def default_whitelist_apply(request, slug):
     return redirect("server_detail", slug=slug)
 
 
+# --- fichiers de configuration ----------------------------------------------------
+
+@login_required
+def server_files(request, slug):
+    server = get_object_or_404(Server, slug=slug)
+    return render(
+        request,
+        "servers/files.html",
+        {"server": server, "files": configs.list_files(server), "mods": configs.installed_mods(server)},
+    )
+
+
+@login_required
+def file_edit(request, slug):
+    server = get_object_or_404(Server, slug=slug)
+    rel = request.GET.get("path", "")
+    content = None
+    if request.method == "POST":
+        content = request.POST.get("content", "")
+        try:
+            configs.save(server, rel, content)
+        except configs.ConfigError as exc:
+            messages.error(request, str(exc))
+        else:
+            messages.success(request, f"{rel} enregistré. Redémarre le serveur pour l'appliquer.")
+            return redirect(f"{request.path}?{urlencode({'path': rel})}")
+    try:
+        if content is None:
+            content = configs.read(server, rel)
+    except configs.ConfigError as exc:
+        messages.error(request, str(exc))
+        return redirect("server_files", slug=slug)
+    return render(
+        request,
+        "servers/file_edit.html",
+        {
+            "server": server,
+            "rel": rel,
+            "content": content,
+            "history": configs.history(server, rel),
+            "managed": configs.MANAGED_PROPERTIES if rel == "server.properties" else None,
+        },
+    )
+
+
+@login_required
+@require_POST
+def file_restore(request, slug):
+    server = get_object_or_404(Server, slug=slug)
+    rel, ts = request.GET.get("path", ""), request.POST.get("ts", "")
+    try:
+        configs.restore(server, rel, ts)
+    except configs.ConfigError as exc:
+        messages.error(request, str(exc))
+    else:
+        messages.success(request, f"Version du {ts} restaurée (la version remplacée est gardée dans l'historique).")
+    return redirect(f"{reverse('file_edit', args=[slug])}?{urlencode({'path': rel})}")
+
+
 # --- paramètres de l'application ------------------------------------------------
 
 def _disk(path):
@@ -284,7 +346,8 @@ def app_settings(request):
                 _podman_action(request, podman.recreate, s)
         form.save()
         log.info("paramètres : %s", {k: form.cleaned_data[k] for k in old})
-        messages.success(request, "Paramètres enregistrés.")
+        key_change = form.save_cf_key()
+        messages.success(request, "Paramètres enregistrés." + (f" Clé CurseForge {key_change}." if key_change else ""))
         return redirect("app_settings")
     return render(
         request,
@@ -296,6 +359,7 @@ def app_settings(request):
                 ("Sauvegardes", current.backup_root, _disk(current.backup_root)),
             ],
             "has_servers": Server.objects.exists(),
+            "has_cf_key": cf_key_file().is_file(),
         },
     )
 

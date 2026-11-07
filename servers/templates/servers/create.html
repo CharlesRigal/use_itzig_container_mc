@@ -3,7 +3,8 @@
 <h1>Nouveau serveur</h1>
 <div class="panel">
   <form method="post" class="form">{% csrf_token %}
-    {% include "servers/_form_fields.html" %}
+    {% include "servers/_server_form.html" %}
+    <p class="check">{{ form.use_default_whitelist }} {{ form.use_default_whitelist.label_tag }}</p>
     <div class="row">
       <button class="btn primary">Créer le conteneur</button>
       <a class="btn" href="{% url 'server_list' %}">Annuler</a>

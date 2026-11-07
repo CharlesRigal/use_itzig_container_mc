@@ -7,7 +7,7 @@
   <form method="post" class="form">{% csrf_token %}
     {{ form.non_field_errors }}
     {% for field in form %}
-      {% if field.name != 'move_existing' %}
+      {% if field.name == 'data_root' or field.name == 'backup_root' %}
       <p>{{ field.label_tag }} {{ field }}
         {% if field.help_text %}<br><span class="helptext">{{ field.help_text }}</span>{% endif %}
         {{ field.errors }}</p>
@@ -17,6 +17,11 @@
     <p class="check">{{ form.move_existing }} {{ form.move_existing.label_tag }}<br>
       <span class="helptext">Les serveurs doivent être arrêtés. Sans cette case, les serveurs existants repartiront avec un monde vide dans le nouveau dossier.</span></p>
     {% endif %}
+
+    <h2 style="margin-top:18px">CurseForge</h2>
+    <p class="muted">Clé : {% if has_cf_key %}<strong>enregistrée</strong>{% else %}aucune{% endif %}. Elle n'est jamais réaffichée et reste sur le Pi (<code>secrets/cf_api_key</code>, lisible par toi seul).</p>
+    <p>{{ form.cf_api_key.label_tag }} {{ form.cf_api_key }}<br><span class="helptext">{{ form.cf_api_key.help_text }}</span></p>
+    {% if has_cf_key %}<p class="check">{{ form.cf_api_key_clear }} {{ form.cf_api_key_clear.label_tag }}</p>{% endif %}
     <button class="btn primary">Enregistrer</button>
   </form>
 </div>

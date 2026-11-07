@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Configs · {{ server.name }}{% endblock %}
+{% block content %}
+<p><a href="{% url 'server_detail' server.slug %}">← {{ server.name }}</a></p>
+<h1>Fichiers de configuration</h1>
+<div class="grid">
+  <section class="panel">
+    <input type="text" id="filter" placeholder="Filtrer (ex. create, jei, server.properties)…" style="margin-bottom:10px">
+    {% if files %}
+    <ul id="files" style="list-style:none;padding:0;margin:0">
+      {% for f in files %}
+      <li style="padding:4px 0;border-bottom:1px solid var(--line)"><a href="{% url 'file_edit' server.slug %}?path={{ f|urlencode }}"><code>{{ f }}</code></a></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Aucun fichier pour l'instant : démarre le serveur une fois pour que les mods génèrent leurs configs.</p>
+    {% endif %}
+    <p class="helptext" style="margin-top:10px">Les configs « par monde » des mods Forge/NeoForge sont dans <code>world/serverconfig</code>, celles par défaut dans <code>defaultconfigs</code>.</p>
+  </section>
+  <section class="panel">
+    <h2>Mods installés</h2>
+    {% for dir, jars in mods.items %}
+      <p class="muted">{{ dir }}/ · {{ jars|length }} fichier(s)</p>
+      <ul style="margin:0 0 10px;padding-left:18px;font-size:.9rem">{% for j in jars %}<li>{{ j }}</li>{% endfor %}</ul>
+    {% empty %}
+      <p class="muted">Aucun dossier mods/ ou plugins/.</p>
+    {% endfor %}
+  </section>
+</div>
+<script>
+document.getElementById("filter").addEventListener("input", e => {
+  const q = e.target.value.toLowerCase();
+  document.querySelectorAll("#files li").forEach(li => { li.style.display = li.textContent.toLowerCase().includes(q) ? "" : "none"; });
+});
+</script>
+{% endblock %}

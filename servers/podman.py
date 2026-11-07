@@ -3,7 +3,7 @@
 import json
 import subprocess
 
-from django.conf import settings
+from .models import CF_KEY_IN_CONTAINER, cf_key_file
 
 LABEL = "mcmanager=1"
 
@@ -65,7 +65,13 @@ def create(server):
         "-p", f"{server.port}:25565",
         "-v", f"{server.data_dir}:/data",
     ]
-    for key, value in server.container_env().items():
+    env = server.container_env()
+    if "CF_API_KEY_FILE" in env:
+        key = cf_key_file()
+        if not key.is_file():
+            raise PodmanError("Ce serveur utilise CurseForge : renseigne la clé API dans Paramètres.")
+        args += ["-v", f"{key}:{CF_KEY_IN_CONTAINER}:ro"]
+    for key, value in env.items():
         args += ["-e", f"{key}={value}"]
     args.append(server.image)
     # Un tag absent (java17…) est téléchargé à la première création.

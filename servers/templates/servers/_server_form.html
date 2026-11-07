@@ -1,0 +1,5 @@
+{{ form.non_field_errors }}
+{% include "servers/_form_fields.html" with fields=form.base_fields_list %}
+<h2 style="margin-top:10px">Mods</h2>
+<p class="helptext">Téléchargés par l'image au démarrage. Les mods posés à la main dans <code>mods/</code> restent en place.</p>
+{% include "servers/_form_fields.html" with fields=form.mod_fields_list %}
