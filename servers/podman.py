@@ -67,8 +67,9 @@ def create(server):
     ]
     for key, value in server.container_env().items():
         args += ["-e", f"{key}={value}"]
-    args.append(settings.MC_IMAGE)
-    _run(args)
+    args.append(server.image)
+    # Un tag absent (java17…) est téléchargé à la première création.
+    _run(args, timeout=900)
 
 
 def stop(server):

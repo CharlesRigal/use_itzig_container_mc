@@ -15,7 +15,7 @@
 </div>
 <p class="muted">
   Adresse : <strong>{{ request.get_host|cut:":8000" }}:{{ server.port }}</strong> ·
-  conteneur <code>{{ server.container_name }}</code> · {{ st.status|default:"pas de conteneur" }}
+  conteneur <code>{{ server.container_name }}</code> · image <code>{{ server.image }}</code> · {{ st.status|default:"pas de conteneur" }}
 </p>
 
 <div class="grid">

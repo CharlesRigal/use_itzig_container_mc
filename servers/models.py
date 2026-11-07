@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 from django.conf import settings
@@ -73,6 +74,20 @@ class Server(models.Model):
         validators=[RegexValidator(r"^[A-Za-z0-9._-]+$", "Version invalide.")],
         help_text="LATEST, SNAPSHOT ou un numéro comme 1.21.4",
     )
+    JAVA = [
+        ("auto", "Automatique selon la version"),
+        ("latest", "latest (Java le plus récent)"),
+        ("java21", "Java 21"),
+        ("java17", "Java 17"),
+        ("java8", "Java 8"),
+    ]
+    java = models.CharField(
+        "Java (tag de l'image)",
+        max_length=10,
+        choices=JAVA,
+        default="auto",
+        help_text="Les vieux Forge/NeoForge plantent avec un Java trop récent.",
+    )
     memory = models.CharField(
         "mémoire",
         max_length=6,
@@ -113,6 +128,26 @@ class Server(models.Model):
     @property
     def backup_dir(self) -> Path:
         return Path(AppSettings.get().backup_root) / self.slug
+
+    def image_tag(self):
+        """Java requis par Minecraft : <1.17 → 8, 1.17 à 1.20.4 → 17, 1.20.5 à 1.21.x → 21."""
+        if self.java != "auto":
+            return self.java
+        m = re.fullmatch(r"1\.(\d+)(?:\.(\d+))?", self.version)
+        if not m:
+            return "latest"
+        minor, patch = int(m.group(1)), int(m.group(2) or 0)
+        if minor < 17:
+            return "java8"
+        if minor < 20 or (minor == 20 and patch <= 4):
+            return "java17"
+        if minor <= 21:
+            return "java21"
+        return "latest"
+
+    @property
+    def image(self):
+        return f"{settings.MC_IMAGE.rsplit(':', 1)[0]}:{self.image_tag()}"
 
     def whitelist_names(self):
         return list(self.whitelist.values_list("name", flat=True))

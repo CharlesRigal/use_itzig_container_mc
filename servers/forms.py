@@ -8,7 +8,7 @@ from django.utils.text import slugify
 from .models import AppSettings, Server, player_name_validator
 
 SERVER_FIELDS = [
-    "name", "port", "type", "version", "memory", "max_players", "difficulty",
+    "name", "port", "type", "version", "java", "memory", "max_players", "difficulty",
     "gamemode", "motd", "view_distance", "pvp", "online_mode", "whitelist_enabled",
 ]
 
