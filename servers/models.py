@@ -117,13 +117,14 @@ class Server(models.Model):
     modpack_source = models.CharField("modpack", max_length=12, choices=MODPACK_SOURCES, default="none")
     modpack_ref = models.CharField(
         "lien ou slug du modpack", max_length=300, blank=True,
-        help_text="Ex. https://www.curseforge.com/minecraft/modpacks/all-the-mods-9 ou le slug. "
+        help_text="Lien de la page, slug ou Project ID (ex. https://www.curseforge.com/minecraft/modpacks/all-the-mods-9). "
                   "Le modpack décide du type et de la version : choisis Java à la main.",
     )
     curseforge_mods = models.TextField(
         "mods CurseForge", blank=True,
-        help_text="Un par ligne : slug, id, id:fichier ou lien. Les dépendances ne sont pas ajoutées "
-                  "automatiquement : liste-les aussi. # pour un commentaire.",
+        help_text="Un par ligne : Project ID ou id:fichier (les slugs et liens demandent une clé avec "
+                  "accès à la recherche). Les dépendances ne sont pas ajoutées automatiquement : "
+                  "liste-les aussi. # pour un commentaire.",
     )
     modrinth_mods = models.TextField(
         "mods Modrinth", blank=True,
@@ -201,8 +202,18 @@ class Server(models.Model):
         # Mods : l'image télécharge tout au démarrage.
         ref = self.modpack_ref.strip()
         if self.modpack_source == "curseforge":
+            # Pack téléchargé par le manager (servers/curseforge.py) : l'image lit le manifest,
+            # ce qui évite l'endpoint de recherche souvent refusé aux clés perso.
             env["TYPE"] = "AUTO_CURSEFORGE"
-            env["CF_PAGE_URL" if ref.startswith("http") else "CF_SLUG"] = ref
+            env["CF_MODPACK_MANIFEST"] = "/data/.mcmanager/manifest.json"
+            work = self.data_dir / ".mcmanager"
+            if (work / "modpack-slug").is_file():
+                env["CF_SLUG"] = (work / "modpack-slug").read_text().strip()
+            # Exclusions déjà traduites en ids par le manager ; la liste par slug de l'image
+            # déclencherait des recherches refusées.
+            env["CF_EXCLUDE_INCLUDE_FILE"] = ""
+            if (work / "exclude-ids").is_file() and (work / "exclude-ids").read_text().strip():
+                env["CF_EXCLUDE_MODS"] = (work / "exclude-ids").read_text().strip()
             del env["VERSION"]
         elif self.modpack_source == "modrinth":
             env["TYPE"] = "MODRINTH"

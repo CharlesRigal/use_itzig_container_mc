@@ -12,7 +12,7 @@ from . import podman
 BACKUP_NAME = re.compile(r"^\d{8}-\d{6}\.tar\.gz$")
 
 # Fichiers que l'image retélécharge ou régénère : inutile de les sauvegarder.
-SKIPPED = {"libraries", "versions", ".cache", "cache", "logs", ".rcon-cli.env", ".rcon-cli.yaml"}
+SKIPPED = {"libraries", "versions", ".cache", "cache", "logs", ".rcon-cli.env", ".rcon-cli.yaml", ".mcmanager"}
 
 
 def _skipped(path: Path):

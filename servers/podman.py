@@ -3,6 +3,7 @@
 import json
 import subprocess
 
+from . import curseforge
 from .models import CF_KEY_IN_CONTAINER, cf_key_file
 
 LABEL = "mcmanager=1"
@@ -97,6 +98,11 @@ def recreate(server):
 
 
 def start(server):
+    if server.modpack_source == "curseforge":
+        try:
+            curseforge.prepare_modpack(server)
+        except curseforge.CurseForgeError as exc:
+            raise PodmanError(f"Modpack CurseForge : {exc}") from exc
     recreate(server)
     _run(["start", server.container_name])
 
