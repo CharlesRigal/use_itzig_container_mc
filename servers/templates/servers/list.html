@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="row" style="justify-content:space-between">
+  <h1>Serveurs</h1>
+  <a class="btn primary" href="{% url 'server_create' %}">+ Nouveau serveur</a>
+</div>
+<div class="panel table-wrap">
+{% if rows %}
+<table>
+  <thead><tr><th>Nom</th><th>État</th><th>Port</th><th>Type</th><th>Version</th><th>Mémoire</th><th></th></tr></thead>
+  <tbody>
+  {% for s, st in rows %}
+  <tr>
+    <td><a href="{% url 'server_detail' s.slug %}"><strong>{{ s.name }}</strong></a></td>
+    <td><span class="state {{ st.state }}">{{ st.state }}</span> <span class="muted">{{ st.status }}</span></td>
+    <td>{{ s.port }}</td><td>{{ s.get_type_display }}</td><td>{{ s.version }}</td><td>{{ s.memory }}</td>
+    <td>
+      {% if st.state == 'running' %}
+      <form class="inline" method="post" action="{% url 'server_action' s.slug 'stop' %}">
+        {% csrf_token %}<input type="hidden" name="next" value="list"><button class="btn small">Arrêter</button>
+      </form>
+      {% else %}
+      <form class="inline" method="post" action="{% url 'server_action' s.slug 'start' %}">
+        {% csrf_token %}<input type="hidden" name="next" value="list"><button class="btn small primary">Démarrer</button>
+      </form>
+      {% endif %}
+    </td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">Aucun serveur. Crée le premier avec « Nouveau serveur ».</p>
+{% endif %}
+</div>
+{% endblock %}

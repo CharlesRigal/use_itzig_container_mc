@@ -1,0 +1,22 @@
+from django.urls import path
+
+from . import views
+
+urlpatterns = [
+    path("", views.server_list, name="server_list"),
+    path("new/", views.server_create, name="server_create"),
+    path("whitelist/", views.default_whitelist, name="default_whitelist"),
+    path("whitelist/<int:pk>/remove/", views.default_whitelist_remove, name="default_whitelist_remove"),
+    path("s/<slug:slug>/", views.server_detail, name="server_detail"),
+    path("s/<slug:slug>/action/<str:action>/", views.server_action, name="server_action"),
+    path("s/<slug:slug>/delete/", views.server_delete, name="server_delete"),
+    path("s/<slug:slug>/logs/", views.server_logs, name="server_logs"),
+    path("s/<slug:slug>/command/", views.server_command, name="server_command"),
+    path("s/<slug:slug>/whitelist/add/", views.whitelist_add, name="whitelist_add"),
+    path("s/<slug:slug>/whitelist/<int:pk>/remove/", views.whitelist_remove, name="whitelist_remove"),
+    path("s/<slug:slug>/whitelist/default/", views.default_whitelist_apply, name="default_whitelist_apply"),
+    path("s/<slug:slug>/backups/new/", views.backup_create, name="backup_create"),
+    path("s/<slug:slug>/backups/<str:name>/", views.backup_download, name="backup_download"),
+    path("s/<slug:slug>/backups/<str:name>/restore/", views.backup_restore, name="backup_restore"),
+    path("s/<slug:slug>/backups/<str:name>/delete/", views.backup_delete, name="backup_delete"),
+]

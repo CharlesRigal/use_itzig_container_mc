@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Whitelist par défaut</h1>
+<div class="panel">
+  <p class="muted">Ces joueurs sont ajoutés automatiquement à chaque nouveau serveur. Pour un serveur existant, utilise le bouton « Ajouter les joueurs de la whitelist par défaut » sur sa page.</p>
+  <ul class="chips">
+    {% for p in players %}
+    <li>{{ p.name }}
+      <form class="inline" method="post" action="{% url 'default_whitelist_remove' p.pk %}">{% csrf_token %}<button title="Retirer">×</button></form>
+    </li>
+    {% empty %}<li class="muted" style="border:0">Liste vide.</li>{% endfor %}
+  </ul>
+  <form method="post" class="row">{% csrf_token %}
+    <input type="text" name="name" placeholder="Pseudo Minecraft" maxlength="16" style="flex:1" required>
+    <button class="btn primary">Ajouter</button>
+  </form>
+  {% for err in form.name.errors %}<p class="errorlist">{{ err }}</p>{% endfor %}
+</div>
+{% endblock %}

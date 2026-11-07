@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}MC Manager{% endblock %}</title>
+<style>
+:root{--bg:#f4f5f2;--panel:#fff;--ink:#1d2320;--muted:#66706a;--line:#dde1dc;--accent:#3c8a3f;--accent-ink:#fff;--danger:#b3362c;--warn:#a46a00;--code:#16191a;--code-ink:#d6e2d8}
+@media (prefers-color-scheme:dark){:root{--bg:#141716;--panel:#1d2120;--ink:#e5e9e6;--muted:#97a29b;--line:#2f3532;--accent:#5fae5f;--accent-ink:#0d130e;--danger:#e0675c;--warn:#e1a73c;--code:#0d0f0f}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{background:var(--panel);border-bottom:1px solid var(--line)}
+header .in,main{max-width:1100px;margin:0 auto;padding:12px 16px}
+header .in{display:flex;gap:18px;align-items:center;flex-wrap:wrap}
+header .brand{font-weight:700;color:var(--ink);text-decoration:none}
+header nav{display:flex;gap:14px;flex:1}
+a{color:var(--accent)}
+h1{font-size:1.5rem;margin:.6em 0}
+h2{font-size:1.1rem;margin:0 0 .6em}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:16px}
+.grid{display:grid;gap:16px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+table{width:100%;border-collapse:collapse}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{color:var(--muted);font-weight:600;font-size:.85rem}
+.btn{display:inline-block;border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 12px;border-radius:7px;font:inherit;cursor:pointer;text-decoration:none}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.btn.danger{color:var(--danger);border-color:var(--danger)}
+.btn.small{padding:3px 8px;font-size:.85rem}
+form.inline{display:inline}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.state{display:inline-block;padding:1px 8px;border-radius:99px;font-size:.8rem;font-weight:600;border:1px solid currentColor}
+.state.running{color:var(--accent)}.state.exited,.state.created,.state.absent,.state.stopped{color:var(--muted)}.state.unknown{color:var(--warn)}
+.muted{color:var(--muted)}
+.messages{list-style:none;padding:0;margin:12px 0}
+.messages li{padding:8px 12px;border-radius:7px;margin-bottom:6px;border:1px solid var(--line);background:var(--panel);word-break:break-word}
+.messages .error{border-color:var(--danger);color:var(--danger)}
+.messages .success{border-color:var(--accent)}
+.form p{margin:0 0 10px}
+.form label{display:block;font-size:.85rem;color:var(--muted)}
+input[type=text],input[type=number],input[type=password],select{width:100%;padding:7px 9px;border:1px solid var(--line);border-radius:7px;background:var(--bg);color:var(--ink);font:inherit}
+.form .check label{display:inline;color:var(--ink);font-size:inherit}
+.helptext{font-size:.8rem;color:var(--muted)}
+.errorlist{color:var(--danger);margin:2px 0;padding-left:18px;font-size:.85rem}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 16px}
+pre.logs{background:var(--code);color:var(--code-ink);padding:12px;border-radius:8px;height:360px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-all;margin:0}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 10px;padding:0;list-style:none}
+.chips li{border:1px solid var(--line);border-radius:99px;padding:2px 4px 2px 10px;display:flex;gap:6px;align-items:center}
+.chips button{border:0;background:none;color:var(--danger);cursor:pointer;font-size:1rem;line-height:1}
+.table-wrap{overflow-x:auto}
+</style>
+</head>
+<body>
+<header><div class="in">
+  <a class="brand" href="{% url 'server_list' %}">⛏ MC Manager</a>
+  {% if user.is_authenticated %}
+  <nav>
+    <a href="{% url 'server_list' %}">Serveurs</a>
+    <a href="{% url 'default_whitelist' %}">Whitelist par défaut</a>
+    {% if user.is_staff %}<a href="{% url 'admin:index' %}">Admin</a>{% endif %}
+  </nav>
+  <form class="inline" method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn small">Déconnexion</button></form>
+  {% endif %}
+</div></header>
+<main>
+  {% if messages %}<ul class="messages">{% for m in messages %}<li class="{{ m.tags }}">{{ m }}</li>{% endfor %}</ul>{% endif %}
+  {% block content %}{% endblock %}
+</main>
+</body>
+</html>

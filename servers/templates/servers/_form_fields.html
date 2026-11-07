@@ -1,0 +1,10 @@
+{{ form.non_field_errors }}
+<div class="cols">
+{% for field in form %}
+  <p class="{% if field.widget_type == 'checkbox' %}check{% endif %}">
+    {% if field.widget_type == 'checkbox' %}{{ field }} {{ field.label_tag }}{% else %}{{ field.label_tag }} {{ field }}{% endif %}
+    {% if field.help_text %}<br><span class="helptext">{{ field.help_text }}</span>{% endif %}
+    {{ field.errors }}
+  </p>
+{% endfor %}
+</div>

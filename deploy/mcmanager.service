@@ -1,0 +1,11 @@
+[Unit]
+Description=MC Manager (Django) - gestion des serveurs Minecraft podman
+After=network-online.target
+
+[Service]
+WorkingDirectory=%h/mcmanager
+ExecStart=%h/mcmanager/.venv/bin/gunicorn mcmanager.wsgi -b 0.0.0.0:8000 -w 2 --threads 4 --timeout 600
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

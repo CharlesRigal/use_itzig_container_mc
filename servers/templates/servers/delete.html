@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Supprimer « {{ server.name }} » ?</h1>
+<div class="panel">
+  <p>Le serveur sera arrêté et son conteneur <code>{{ server.container_name }}</code> supprimé.</p>
+  <form method="post" class="form">{% csrf_token %}
+    <p class="check"><input type="checkbox" name="delete_data" id="dd">
+      <label for="dd">Supprimer aussi le monde ({{ server.data_dir }}) et toutes ses sauvegardes. Irréversible.</label></p>
+    <div class="row">
+      <button class="btn danger">Supprimer</button>
+      <a class="btn" href="{% url 'server_detail' server.slug %}">Annuler</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

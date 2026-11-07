@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}{{ server.name }} · MC Manager{% endblock %}
+{% block content %}
+<div class="row" style="justify-content:space-between">
+  <h1>{{ server.name }} <span class="state {{ st.state }}">{{ st.state }}</span></h1>
+  <div class="row">
+    {% if st.state == 'running' %}
+      <form class="inline" method="post" action="{% url 'server_action' server.slug 'restart' %}">{% csrf_token %}<button class="btn">Redémarrer</button></form>
+      <form class="inline" method="post" action="{% url 'server_action' server.slug 'stop' %}">{% csrf_token %}<button class="btn">Arrêter</button></form>
+    {% else %}
+      <form class="inline" method="post" action="{% url 'server_action' server.slug 'start' %}">{% csrf_token %}<button class="btn primary">Démarrer</button></form>
+    {% endif %}
+    <a class="btn danger" href="{% url 'server_delete' server.slug %}">Supprimer</a>
+  </div>
+</div>
+<p class="muted">
+  Adresse : <strong>{{ request.get_host|cut:":8000" }}:{{ server.port }}</strong> ·
+  conteneur <code>{{ server.container_name }}</code> · {{ st.status|default:"pas de conteneur" }}
+</p>
+
+<div class="grid">
+  <section class="panel">
+    <h2>Console</h2>
+    <pre class="logs" id="logs">Chargement…</pre>
+    <form method="post" action="{% url 'server_command' server.slug %}" class="row" style="margin-top:8px">{% csrf_token %}
+      <input type="text" name="command" placeholder="say Bonjour, op Pseudo, time set day…" style="flex:1" {% if st.state != 'running' %}disabled{% endif %}>
+      <button class="btn" {% if st.state != 'running' %}disabled{% endif %}>Envoyer</button>
+    </form>
+  </section>
+
+  <section class="panel">
+    <h2>Whitelist {% if not server.whitelist_enabled %}<span class="muted">(désactivée)</span>{% endif %}</h2>
+    <ul class="chips">
+      {% for p in server.whitelist.all %}
+      <li>{{ p.name }}
+        <form class="inline" method="post" action="{% url 'whitelist_remove' server.slug p.pk %}">{% csrf_token %}<button title="Retirer">×</button></form>
+      </li>
+      {% empty %}<li class="muted" style="border:0">Personne pour l'instant.</li>{% endfor %}
+    </ul>
+    <form method="post" action="{% url 'whitelist_add' server.slug %}" class="row">{% csrf_token %}
+      <input type="text" name="name" placeholder="Pseudo Minecraft" maxlength="16" style="flex:1" required>
+      <button class="btn primary">Ajouter</button>
+    </form>
+    <form method="post" action="{% url 'default_whitelist_apply' server.slug %}" style="margin-top:8px">{% csrf_token %}
+      <button class="btn small">Ajouter les joueurs de la whitelist par défaut</button>
+    </form>
+
+    <h2 style="margin-top:20px">Sauvegardes</h2>
+    <form method="post" action="{% url 'backup_create' server.slug %}" style="margin-bottom:8px">{% csrf_token %}
+      <button class="btn primary">Sauvegarder maintenant</button>
+    </form>
+    {% if backups %}
+    <table>
+      {% for b in backups %}
+      <tr>
+        <td>{{ b.date|date:"d/m/Y H:i:s" }}<br><span class="muted">{{ b.size_mb }} Mo</span></td>
+        <td style="text-align:right">
+          <a class="btn small" href="{% url 'backup_download' server.slug b.name %}">Télécharger</a>
+          <form class="inline" method="post" action="{% url 'backup_restore' server.slug b.name %}" onsubmit="return confirm('Remplacer le monde actuel par cette sauvegarde ? (l\'état actuel sera sauvegardé avant)')">{% csrf_token %}<button class="btn small">Restaurer</button></form>
+          <form class="inline" method="post" action="{% url 'backup_delete' server.slug b.name %}" onsubmit="return confirm('Supprimer cette sauvegarde ?')">{% csrf_token %}<button class="btn small danger">×</button></form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+    {% else %}<p class="muted">Aucune sauvegarde.</p>{% endif %}
+  </section>
+</div>
+
+<section class="panel">
+  <h2>Paramètres</h2>
+  <form method="post" class="form">{% csrf_token %}
+    {% include "servers/_form_fields.html" %}
+    <button class="btn primary">Enregistrer{% if st.state == 'running' %} et redémarrer{% endif %}</button>
+  </form>
+</section>
+
+<script>
+(function(){
+  const pre = document.getElementById("logs");
+  const url = "{% url 'server_logs' server.slug %}";
+  async function refresh(){
+    try{
+      const r = await fetch(url, {credentials:"same-origin"});
+      const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+      pre.textContent = (await r.text()) || "(aucun log : le serveur n'a pas encore démarré)";
+      if (atBottom) pre.scrollTop = pre.scrollHeight;
+    }catch(e){}
+  }
+  refresh();
+  {% if st.state == 'running' %}setInterval(refresh, 3000);{% endif %}
+})();
+</script>
+{% endblock %}
