@@ -128,6 +128,12 @@ class AppSettingsForm(forms.ModelForm):
         return data
 
 
+class BackupScheduleForm(forms.ModelForm):
+    class Meta:
+        model = Server
+        fields = ["backup_enabled", "backup_interval_hours", "backup_keep"]
+
+
 class PlayerForm(forms.Form):
     name = forms.CharField(label="pseudo", max_length=16, validators=[player_name_validator])
 

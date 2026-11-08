@@ -47,22 +47,43 @@
     </form>
 
     <h2 style="margin-top:20px">Sauvegardes</h2>
-    <form method="post" action="{% url 'backup_create' server.slug %}" style="margin-bottom:8px">{% csrf_token %}
-      <button class="btn primary">Sauvegarder maintenant</button>
+    <form method="post" action="{% url 'backup_schedule' server.slug %}" class="form" style="margin-bottom:10px">{% csrf_token %}
+      <div class="row">
+        <span class="check">{{ schedule_form.backup_enabled }} {{ schedule_form.backup_enabled.label_tag }}</span>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <label style="flex:1">{{ schedule_form.backup_interval_hours.label }} {{ schedule_form.backup_interval_hours }}</label>
+        <label style="flex:1">{{ schedule_form.backup_keep.label }} {{ schedule_form.backup_keep }}</label>
+        <button class="btn small" style="align-self:flex-end">Enregistrer</button>
+      </div>
+      <p class="helptext" style="margin:6px 0 0">
+        {% if next_backup %}Prochaine sauvegarde automatique {{ next_backup }}.{% else %}Planification désactivée.{% endif %}
+        Annulée s'il n'y a eu aucune modification. Au-delà de {{ server.backup_keep }}, les plus anciennes sont supprimées.
+      </p>
     </form>
+    <div class="row" style="margin-bottom:8px">
+      <form class="inline" method="post" action="{% url 'backup_create' server.slug %}">{% csrf_token %}
+        <button class="btn primary">Sauvegarder maintenant</button>
+      </form>
+      <form class="inline" method="post" action="{% url 'backup_create' server.slug %}">{% csrf_token %}
+        <input type="hidden" name="force" value="1"><button class="btn small" title="Même si rien n'a changé">Forcer</button>
+      </form>
+    </div>
     {% if backups %}
     <table>
       {% for b in backups %}
       <tr>
-        <td>{{ b.date|date:"d/m/Y H:i:s" }}<br><span class="muted">{{ b.size_mb }} Mo</span></td>
-        <td style="text-align:right">
-          <a class="btn small" href="{% url 'backup_download' server.slug b.name %}">Télécharger</a>
-          <form class="inline" method="post" action="{% url 'backup_restore' server.slug b.name %}" onsubmit="return confirm('Remplacer le monde actuel par cette sauvegarde ? (l\'état actuel sera sauvegardé avant)')">{% csrf_token %}<button class="btn small">Restaurer</button></form>
+        <td>{{ b.date|date:"d/m/Y H:i:s" }} <span class="muted">· {{ b.reason }}</span><br>
+          <span class="muted" title="Données nouvelles dans cette sauvegarde / taille complète du monde">+{{ b.new_mb }} Mo · {{ b.total_mb }} Mo au total</span></td>
+        <td style="text-align:right;white-space:nowrap">
+          <a class="btn small" href="{% url 'backup_download' server.slug b.name %}" title="Archive .tar.gz">↓</a>
+          <form class="inline" method="post" action="{% url 'backup_restore' server.slug b.name %}" onsubmit="return confirm('Remplacer le monde actuel par cette sauvegarde ? L\'état actuel sera sauvegardé avant.')">{% csrf_token %}<button class="btn small">Restaurer</button></form>
           <form class="inline" method="post" action="{% url 'backup_delete' server.slug b.name %}" onsubmit="return confirm('Supprimer cette sauvegarde ?')">{% csrf_token %}<button class="btn small danger">×</button></form>
         </td>
       </tr>
       {% endfor %}
     </table>
+    <p class="helptext">Sauvegardes incrémentales : seuls les fichiers modifiés prennent de la place (« +… Mo »).</p>
     {% else %}<p class="muted">Aucune sauvegarde.</p>{% endif %}
   </section>
 </div>

@@ -11,8 +11,12 @@ Interface web Django pour gérer plusieurs serveurs Minecraft dans des conteneur
 - Console : logs en direct et commandes via `rcon-cli`.
 - Whitelist par serveur, appliquée tout de suite si le serveur tourne.
 - Whitelist par défaut, copiée dans chaque nouveau serveur.
-- Sauvegardes `.tar.gz` à chaud (`save-off` / `save-all flush`), téléchargement, restauration
-  (l'état actuel est sauvegardé avant), suppression.
+- Sauvegardes à chaud (`save-off` / `save-all flush`) incrémentales : snapshots à liens durs, seuls
+  les fichiers modifiés prennent de la place. Liste, création (annulée si rien n'a changé, sauf
+  « Forcer »), restauration (l'état actuel est sauvegardé avant), suppression, téléchargement
+  `.tar.gz` à la volée, planification par serveur (intervalle en heures) et rétention (N max).
+- Modpacks CurseForge installés sans l'endpoint de recherche (manifest + exclusions par id).
+- Éditeur des fichiers de config avec historique.
 
 ## Fonctionnement
 

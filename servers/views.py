@@ -7,7 +7,9 @@ from pathlib import Path
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db import transaction
-from django.http import FileResponse, Http404, HttpResponse
+from datetime import datetime, timedelta
+
+from django.http import Http404, HttpResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -15,7 +17,7 @@ from django.urls import reverse
 from django.utils.http import urlencode
 
 from . import backups, configs, podman
-from .forms import AppSettingsForm, CommandForm, PlayerForm, ServerCreateForm, ServerForm, next_free_port
+from .forms import AppSettingsForm, BackupScheduleForm, CommandForm, PlayerForm, ServerCreateForm, ServerForm, next_free_port
 from .models import AppSettings, DefaultWhitelistEntry, Server, WhitelistEntry, cf_key_file
 
 
@@ -96,9 +98,20 @@ def server_detail(request, slug):
             "st": st,
             "player_form": PlayerForm(),
             "command_form": CommandForm(),
-            "backups": backups.list_backups(server),
+            "backups": (blist := backups.list_backups(server)),
+            "schedule_form": BackupScheduleForm(instance=server),
+            "next_backup": _next_backup(server, blist),
         },
     )
+
+
+def _next_backup(server, blist):
+    if not server.backup_enabled:
+        return None
+    if not blist:
+        return "dans moins d'une minute"
+    nxt = blist[0]["date"] + timedelta(hours=server.backup_interval_hours)
+    return "dans moins d'une minute" if nxt <= datetime.now() else f"vers {nxt:%d/%m %H:%M}"
 
 
 @login_required
@@ -370,9 +383,35 @@ def app_settings(request):
 @require_POST
 def backup_create(request, slug):
     server = get_object_or_404(Server, slug=slug)
-    name = _podman_action(request, backups.create_backup, server)
-    if name:
+    force = bool(request.POST.get("force"))
+    try:
+        name = backups.create_backup(server, reason="manual", skip_unchanged=not force)
+    except backups.BackupSkipped as exc:
+        messages.info(request, str(exc))
+    except (podman.PodmanError, OSError) as exc:
+        log.exception("sauvegarde %s", slug)
+        messages.error(request, str(exc))
+    else:
         messages.success(request, f"Sauvegarde {name} créée.")
+    return redirect("server_detail", slug=slug)
+
+
+@login_required
+@require_POST
+def backup_schedule(request, slug):
+    server = get_object_or_404(Server, slug=slug)
+    form = BackupScheduleForm(request.POST, instance=server)
+    if form.is_valid():
+        form.save()
+        removed = backups.apply_retention(server)
+        msg = "Planification enregistrée."
+        if removed:
+            msg += f" {len(removed)} ancienne(s) sauvegarde(s) supprimée(s) pour n'en garder que {server.backup_keep}."
+        messages.success(request, msg)
+    else:
+        for errs in form.errors.values():
+            for e in errs:
+                messages.error(request, e)
     return redirect("server_detail", slug=slug)
 
 
@@ -380,19 +419,28 @@ def backup_create(request, slug):
 def backup_download(request, slug, name):
     server = get_object_or_404(Server, slug=slug)
     try:
-        path = backups.backup_path(server, name)
+        backups.snapshot_path(server, name)
     except FileNotFoundError:
         raise Http404
-    return FileResponse(open(path, "rb"), as_attachment=True, filename=f"{server.slug}-{name}")
+    response = StreamingHttpResponse(backups.stream_tar(server, name), content_type="application/gzip")
+    response["Content-Disposition"] = f'attachment; filename="{server.slug}-{name}.tar.gz"'
+    return response
 
 
 @login_required
 @require_POST
 def backup_restore(request, slug, name):
     server = get_object_or_404(Server, slug=slug)
-    safety = _podman_action(request, backups.restore_backup, server, name)
-    if safety:
-        messages.success(request, f"Sauvegarde {name} restaurée. L'état précédent est conservé dans {safety}.")
+    try:
+        safety = backups.restore_backup(server, name)
+    except FileNotFoundError:
+        raise Http404
+    except (podman.PodmanError, OSError) as exc:
+        log.exception("restauration %s/%s", slug, name)
+        messages.error(request, str(exc))
+    else:
+        detail = f"L'état précédent est conservé dans {safety}." if safety else "L'état précédent était identique à la dernière sauvegarde."
+        messages.success(request, f"Sauvegarde {name} restaurée. {detail}")
     return redirect("server_detail", slug=slug)
 
 

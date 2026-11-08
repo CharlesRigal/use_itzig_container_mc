@@ -131,6 +131,14 @@ class Server(models.Model):
         help_text="Un par ligne : slug ou id (ex. lithium). Les dépendances requises sont ajoutées "
                   "automatiquement.",
     )
+    backup_enabled = models.BooleanField("sauvegarde automatique", default=False)
+    backup_interval_hours = models.PositiveIntegerField(
+        "toutes les (heures)", default=6, validators=[MinValueValidator(1), MaxValueValidator(720)]
+    )
+    backup_keep = models.PositiveIntegerField(
+        "sauvegardes gardées", default=10, validators=[MinValueValidator(1), MaxValueValidator(1000)],
+        help_text="Les plus anciennes sont supprimées au-delà.",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
