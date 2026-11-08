@@ -16,18 +16,32 @@ _last_check = {}  # slug -> datetime du dernier contrôle « rien n'a changé »
 
 def run_due_backups(now=None):
     """Lance les sauvegardes dues. Renvoie [(slug, résultat)] ; appelable à la main pour tester."""
-    from . import backups
+    from django.utils import timezone
+
+    from . import backups, jobs, status
     from .models import Server
 
     now = now or datetime.now()
+    servers = list(Server.objects.all())
+    # Le ping de chaque minute note quand des joueurs étaient connectés (players_seen_at).
+    status.collect(servers)
     results = []
-    for server in Server.objects.filter(backup_enabled=True):
+    for server in servers:
+        if not server.backup_enabled or jobs.is_busy(server):
+            continue
         interval = timedelta(hours=server.backup_interval_hours)
         last = backups.latest(server)
         last_time = datetime.strptime(last.name, "%Y%m%d-%H%M%S") if last else None
         reference = max(filter(None, [last_time, _last_check.get(server.slug)]), default=None)
         if reference and now - reference < interval:
             continue
+        if server.backup_only_with_players and last_time:
+            seen = server.players_seen_at
+            if seen is None or timezone.localtime(seen).replace(tzinfo=None) < last_time:
+                _last_check[server.slug] = now
+                log.info("sauvegarde planifiée %s annulée : aucun joueur depuis la précédente", server.slug)
+                results.append((server.slug, "annulée (aucun joueur)"))
+                continue
         try:
             name = backups.create_backup(server, reason="auto")
             results.append((server.slug, f"créée {name}"))

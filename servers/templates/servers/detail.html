@@ -1,22 +1,22 @@
 {% extends "base.html" %}
 {% block title %}{{ server.name }} · MC Manager{% endblock %}
 {% block content %}
+{% with slug=server.slug %}
 <div class="row" style="justify-content:space-between">
-  <h1>{{ server.name }} <span class="state {{ st.state }}">{{ st.state }}</span></h1>
+  <h1>{{ server.name }} <span class="state {{ st.color }}" data-badge="{{ slug }}">{{ st.label }}</span></h1>
   <div class="row">
-    {% if st.state == 'running' %}
-      <form class="inline" method="post" action="{% url 'server_action' server.slug 'restart' %}">{% csrf_token %}<button class="btn">Redémarrer</button></form>
-      <form class="inline" method="post" action="{% url 'server_action' server.slug 'stop' %}">{% csrf_token %}<button class="btn">Arrêter</button></form>
-    {% else %}
-      <form class="inline" method="post" action="{% url 'server_action' server.slug 'start' %}">{% csrf_token %}<button class="btn primary">Démarrer</button></form>
-    {% endif %}
-    <a class="btn" href="{% url 'server_files' server.slug %}">Configs et mods</a>
-    <a class="btn danger" href="{% url 'server_delete' server.slug %}">Supprimer</a>
+    <form class="inline" method="post" action="{% url 'server_action' slug 'start' %}" data-slug="{{ slug }}" data-show="stopped error">{% csrf_token %}<button class="btn primary">Démarrer</button></form>
+    <form class="inline" method="post" action="{% url 'server_action' slug 'restart' %}" data-slug="{{ slug }}" data-show="ready unresponsive">{% csrf_token %}<button class="btn">Redémarrer</button></form>
+    <form class="inline" method="post" action="{% url 'server_action' slug 'stop' %}" data-slug="{{ slug }}" data-show="ready starting installing unresponsive" onsubmit="return mcConfirmStop('{{ slug }}')">{% csrf_token %}<button class="btn">Arrêter</button></form>
+    <a class="btn" href="{% url 'server_files' slug %}">Configs et mods</a>
+    <a class="btn danger" href="{% url 'server_delete' slug %}">Supprimer</a>
   </div>
 </div>
+<div class="sub" data-sub="{{ slug }}" style="margin-top:-6px"></div>
+<pre class="errbox" data-error="{{ slug }}" hidden></pre>
 <p class="muted">
   Adresse : <strong>{{ request.get_host|cut:":8000" }}:{{ server.port }}</strong> ·
-  conteneur <code>{{ server.container_name }}</code> · image <code>{{ server.image }}</code> · {{ st.status|default:"pas de conteneur" }}
+  conteneur <code>{{ server.container_name }}</code> · image <code>{{ server.image }}</code>
 </p>
 
 <div class="grid">
@@ -24,8 +24,8 @@
     <h2>Console</h2>
     <pre class="logs" id="logs">Chargement…</pre>
     <form method="post" action="{% url 'server_command' server.slug %}" class="row" style="margin-top:8px">{% csrf_token %}
-      <input type="text" name="command" placeholder="say Bonjour, op Pseudo, time set day…" style="flex:1" {% if st.state != 'running' %}disabled{% endif %}>
-      <button class="btn" {% if st.state != 'running' %}disabled{% endif %}>Envoyer</button>
+      <input type="text" name="command" placeholder="say Bonjour, op Pseudo, time set day…" style="flex:1" data-slug="{{ slug }}" data-enable="ready">
+      <button class="btn" data-slug="{{ slug }}" data-enable="ready">Envoyer</button>
     </form>
   </section>
 
@@ -56,17 +56,23 @@
         <label style="flex:1">{{ schedule_form.backup_keep.label }} {{ schedule_form.backup_keep }}</label>
         <button class="btn small" style="align-self:flex-end">Enregistrer</button>
       </div>
+      <div class="row" style="margin-top:6px">
+        <span class="check">{{ schedule_form.backup_only_with_players }} {{ schedule_form.backup_only_with_players.label_tag }}</span>
+      </div>
       <p class="helptext" style="margin:6px 0 0">
         {% if next_backup %}Prochaine sauvegarde automatique {{ next_backup }}.{% else %}Planification désactivée.{% endif %}
-        Annulée s'il n'y a eu aucune modification. Au-delà de {{ server.backup_keep }}, les plus anciennes sont supprimées.
+        Annulée s'il n'y a eu aucune modification{% if server.backup_only_with_players %} ou aucun joueur depuis la précédente{% endif %}.
+        Au-delà de {{ server.backup_keep }}, les plus anciennes sont supprimées.
+        {% if server.players_seen_at %}Dernier joueur vu : {{ server.players_seen_at|date:"d/m H:i" }}.{% endif %}
       </p>
     </form>
+    {% with ok="stopped ready unresponsive error" %}
     <div class="row" style="margin-bottom:8px">
-      <form class="inline" method="post" action="{% url 'backup_create' server.slug %}">{% csrf_token %}
-        <button class="btn primary">Sauvegarder maintenant</button>
+      <form class="inline" method="post" action="{% url 'backup_create' slug %}">{% csrf_token %}
+        <button class="btn primary" data-slug="{{ slug }}" data-enable="{{ ok }}">Sauvegarder maintenant</button>
       </form>
-      <form class="inline" method="post" action="{% url 'backup_create' server.slug %}">{% csrf_token %}
-        <input type="hidden" name="force" value="1"><button class="btn small" title="Même si rien n'a changé">Forcer</button>
+      <form class="inline" method="post" action="{% url 'backup_create' slug %}">{% csrf_token %}
+        <input type="hidden" name="force" value="1"><button class="btn small" title="Même si rien n'a changé" data-slug="{{ slug }}" data-enable="{{ ok }}">Forcer</button>
       </form>
     </div>
     {% if backups %}
@@ -77,7 +83,7 @@
           <span class="muted" title="Données nouvelles dans cette sauvegarde / taille complète du monde">+{{ b.new_mb }} Mo · {{ b.total_mb }} Mo au total</span></td>
         <td style="text-align:right;white-space:nowrap">
           <a class="btn small" href="{% url 'backup_download' server.slug b.name %}" title="Archive .tar.gz">↓</a>
-          <form class="inline" method="post" action="{% url 'backup_restore' server.slug b.name %}" onsubmit="return confirm('Remplacer le monde actuel par cette sauvegarde ? L\'état actuel sera sauvegardé avant.')">{% csrf_token %}<button class="btn small">Restaurer</button></form>
+          <form class="inline" method="post" action="{% url 'backup_restore' slug b.name %}" onsubmit="return confirm('Remplacer le monde actuel par cette sauvegarde ? L\'état actuel sera sauvegardé avant.')">{% csrf_token %}<button class="btn small" data-slug="{{ slug }}" data-enable="{{ ok }}">Restaurer</button></form>
           <form class="inline" method="post" action="{% url 'backup_delete' server.slug b.name %}" onsubmit="return confirm('Supprimer cette sauvegarde ?')">{% csrf_token %}<button class="btn small danger">×</button></form>
         </td>
       </tr>
@@ -85,6 +91,7 @@
     </table>
     <p class="helptext">Sauvegardes incrémentales : seuls les fichiers modifiés prennent de la place (« +… Mo »).</p>
     {% else %}<p class="muted">Aucune sauvegarde.</p>{% endif %}
+    {% endwith %}
   </section>
 </div>
 
@@ -92,12 +99,15 @@
   <h2>Paramètres</h2>
   <form method="post" class="form">{% csrf_token %}
     {% include "servers/_server_form.html" %}
-    <button class="btn primary">Enregistrer{% if st.state == 'running' %} et redémarrer{% endif %}</button>
+    <button class="btn primary">Enregistrer</button>
+    <span class="helptext" data-slug="{{ slug }}" data-show="ready starting installing unresponsive">Le serveur redémarrera pour appliquer les changements.</span>
   </form>
 </section>
+{% endwith %}
 
 <script>
 (function(){
+  const slug = "{{ server.slug }}";
   const pre = document.getElementById("logs");
   const url = "{% url 'server_logs' server.slug %}";
   async function refresh(){
@@ -109,7 +119,12 @@
     }catch(e){}
   }
   refresh();
-  {% if st.state == 'running' %}setInterval(refresh, 3000);{% endif %}
+  // Logs rafraîchis tant que le serveur n'est pas arrêté.
+  setInterval(() => { const k = (window.mcState[slug] || {}).key; if (k && k !== "stopped") refresh(); }, 3000);
+  // Une action vient de finir (ex. restauration) : on recharge pour mettre à jour les listes.
+  document.addEventListener("mc-state", e => {
+    if (e.detail.slug === slug && e.detail.prev.key === "restoring") location.reload();
+  });
 })();
 </script>
 {% endblock %}

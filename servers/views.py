@@ -9,14 +9,14 @@ from django.contrib.auth.decorators import login_required
 from django.db import transaction
 from datetime import datetime, timedelta
 
-from django.http import Http404, HttpResponse, StreamingHttpResponse
+from django.http import Http404, HttpResponse, JsonResponse, StreamingHttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
 from django.urls import reverse
 from django.utils.http import urlencode
 
-from . import backups, configs, podman
+from . import backups, configs, jobs, podman, status
 from .forms import AppSettingsForm, BackupScheduleForm, CommandForm, PlayerForm, ServerCreateForm, ServerForm, next_free_port
 from .models import AppSettings, DefaultWhitelistEntry, Server, WhitelistEntry, cf_key_file
 
@@ -38,16 +38,30 @@ def _podman_action(request, func, *args, success=None):
 
 @login_required
 def server_list(request):
+    servers = list(Server.objects.all())
+    statuses = status.collect(servers)
+    rows = [(s, statuses[s.slug]) for s in servers]
+    return render(
+        request, "servers/list.html",
+        {"rows": rows, "initial_status": {k: status.as_json(v) for k, v in statuses.items()}},
+    )
+
+
+@login_required
+def status_json(request):
+    """État de tous les serveurs, interrogé par les pages toutes les quelques secondes."""
+    statuses = status.collect(Server.objects.all())
+    return JsonResponse({k: status.as_json(v) for k, v in statuses.items()})
+
+
+def _launch(request, server, action, success):
     try:
-        states = podman.states()
-    except podman.PodmanError as exc:
+        jobs.launch(server, action)
+    except jobs.Busy as exc:
         messages.error(request, str(exc))
-        states = {}
-    rows = [
-        (s, states.get(s.container_name, {"state": "absent", "status": ""}))
-        for s in Server.objects.all()
-    ]
-    return render(request, "servers/list.html", {"rows": rows})
+        return False
+    messages.success(request, success)
+    return True
 
 
 @login_required
@@ -78,17 +92,13 @@ def server_detail(request, slug):
         if form.is_valid():
             form.save()
             if podman.is_running(server):
-                _podman_action(request, podman.restart, server, success="Paramètres appliqués, serveur redémarré.")
+                _launch(request, server, "restart", "Paramètres enregistrés, redémarrage lancé.")
             else:
                 messages.success(request, "Paramètres enregistrés, ils s'appliqueront au prochain démarrage.")
             return redirect("server_detail", slug=slug)
     else:
         form = ServerForm(instance=server)
-    try:
-        st = podman.state(server)
-    except podman.PodmanError as exc:
-        messages.error(request, str(exc))
-        st = {"state": "unknown", "status": ""}
+    st = status.for_server(server)
     return render(
         request,
         "servers/detail.html",
@@ -96,6 +106,7 @@ def server_detail(request, slug):
             "server": server,
             "form": form,
             "st": st,
+            "initial_status": {server.slug: status.as_json(st)},
             "player_form": PlayerForm(),
             "command_form": CommandForm(),
             "backups": (blist := backups.list_backups(server)),
@@ -118,15 +129,14 @@ def _next_backup(server, blist):
 @require_POST
 def server_action(request, slug, action):
     server = get_object_or_404(Server, slug=slug)
-    actions = {
-        "start": (podman.start, "Serveur démarré. Le premier lancement télécharge Minecraft : compte 1 à 3 minutes."),
-        "stop": (podman.stop, "Serveur arrêté."),
-        "restart": (podman.restart, "Serveur redémarré."),
+    messages_ok = {
+        "start": "Démarrage lancé. Suis l'état en direct : installation, démarrage, puis « Prêt ».",
+        "stop": "Arrêt lancé.",
+        "restart": "Redémarrage lancé.",
     }
-    if action not in actions:
+    if action not in messages_ok:
         raise Http404
-    func, msg = actions[action]
-    _podman_action(request, func, server, success=msg)
+    _launch(request, server, action, messages_ok[action])
     if request.POST.get("next") == "list":
         return redirect("server_list")
     return redirect("server_detail", slug=slug)
@@ -136,6 +146,9 @@ def server_action(request, slug, action):
 def server_delete(request, slug):
     server = get_object_or_404(Server, slug=slug)
     if request.method == "POST":
+        if jobs.is_busy(server):
+            messages.error(request, "Une action est en cours sur ce serveur, attends qu'elle se termine.")
+            return redirect("server_detail", slug=slug)
         try:
             podman.remove(server)
         except podman.PodmanError as exc:
@@ -384,6 +397,10 @@ def app_settings(request):
 def backup_create(request, slug):
     server = get_object_or_404(Server, slug=slug)
     force = bool(request.POST.get("force"))
+    st = status.for_server(server)
+    if st["key"] in ("preparing", "installing", "starting", "stopping", "restoring"):
+        messages.error(request, f"Sauvegarde impossible pendant : {st['label'].lower()}. Réessaie quand le serveur est prêt ou arrêté.")
+        return redirect("server_detail", slug=slug)
     try:
         name = backups.create_backup(server, reason="manual", skip_unchanged=not force)
     except backups.BackupSkipped as exc:
@@ -432,15 +449,13 @@ def backup_download(request, slug, name):
 def backup_restore(request, slug, name):
     server = get_object_or_404(Server, slug=slug)
     try:
-        safety = backups.restore_backup(server, name)
+        jobs.restore(server, name)
     except FileNotFoundError:
         raise Http404
-    except (podman.PodmanError, OSError) as exc:
-        log.exception("restauration %s/%s", slug, name)
+    except jobs.Busy as exc:
         messages.error(request, str(exc))
     else:
-        detail = f"L'état précédent est conservé dans {safety}." if safety else "L'état précédent était identique à la dernière sauvegarde."
-        messages.success(request, f"Sauvegarde {name} restaurée. {detail}")
+        messages.success(request, f"Restauration de {name} lancée. L'état actuel est sauvegardé avant (« avant restauration »).")
     return redirect("server_detail", slug=slug)
 
 

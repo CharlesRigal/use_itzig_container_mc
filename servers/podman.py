@@ -31,14 +31,25 @@ def _run(args, timeout=120, check=True):
     return proc
 
 
+def ps_json():
+    """Conteneurs gérés, tels que les décrit `podman ps --format json`."""
+    proc = _run(["ps", "-a", "--filter", f"label={LABEL}", "--format", "json"])
+    return json.loads(proc.stdout or "[]")
+
+
 def states():
     """{nom_du_conteneur: {"state": "running", "status": "Up 3 minutes (healthy)"}}"""
-    proc = _run(["ps", "-a", "--filter", f"label={LABEL}", "--format", "json"])
     result = {}
-    for c in json.loads(proc.stdout or "[]"):
+    for c in ps_json():
         for name in c.get("Names") or []:
             result[name] = {"state": c.get("State", "unknown"), "status": c.get("Status", "")}
     return result
+
+
+def top_commands(server):
+    """Noms des processus du conteneur (pour savoir si Java a démarré)."""
+    proc = _run(["top", server.container_name, "comm"], check=False, timeout=20)
+    return proc.stdout.split()[1:] if proc.returncode == 0 else []
 
 
 def state(server):

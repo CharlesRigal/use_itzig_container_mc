@@ -131,7 +131,7 @@ class AppSettingsForm(forms.ModelForm):
 class BackupScheduleForm(forms.ModelForm):
     class Meta:
         model = Server
-        fields = ["backup_enabled", "backup_interval_hours", "backup_keep"]
+        fields = ["backup_enabled", "backup_interval_hours", "backup_keep", "backup_only_with_players"]
 
 
 class PlayerForm(forms.Form):

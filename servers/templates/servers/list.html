@@ -7,23 +7,21 @@
 <div class="panel table-wrap">
 {% if rows %}
 <table>
-  <thead><tr><th>Nom</th><th>État</th><th>Port</th><th>Type</th><th>Version</th><th>Mémoire</th><th></th></tr></thead>
+  <thead><tr><th>Nom</th><th>État</th><th>Port</th><th>Type</th><th>Mémoire</th><th></th></tr></thead>
   <tbody>
   {% for s, st in rows %}
   <tr>
     <td><a href="{% url 'server_detail' s.slug %}"><strong>{{ s.name }}</strong></a></td>
-    <td><span class="state {{ st.state }}">{{ st.state }}</span> <span class="muted">{{ st.status }}</span></td>
-    <td>{{ s.port }}</td><td>{{ s.get_type_display }}</td><td>{{ s.version }}</td><td>{{ s.memory }}</td>
-    <td>
-      {% if st.state == 'running' %}
-      <form class="inline" method="post" action="{% url 'server_action' s.slug 'stop' %}">
-        {% csrf_token %}<input type="hidden" name="next" value="list"><button class="btn small">Arrêter</button>
-      </form>
-      {% else %}
-      <form class="inline" method="post" action="{% url 'server_action' s.slug 'start' %}">
+    <td><span class="state {{ st.color }}" data-badge="{{ s.slug }}">{{ st.label }}</span>
+      <div class="sub" data-sub="{{ s.slug }}"></div></td>
+    <td>{{ s.port }}</td><td>{{ s.get_type_display }}{% if s.modpack_source != 'none' %} · modpack{% endif %}</td><td>{{ s.memory }}</td>
+    <td style="white-space:nowrap">
+      <form class="inline" method="post" action="{% url 'server_action' s.slug 'start' %}" data-slug="{{ s.slug }}" data-show="stopped error">
         {% csrf_token %}<input type="hidden" name="next" value="list"><button class="btn small primary">Démarrer</button>
       </form>
-      {% endif %}
+      <form class="inline" method="post" action="{% url 'server_action' s.slug 'stop' %}" data-slug="{{ s.slug }}" data-show="ready starting installing unresponsive" onsubmit="return mcConfirmStop('{{ s.slug }}')">
+        {% csrf_token %}<input type="hidden" name="next" value="list"><button class="btn small">Arrêter</button>
+      </form>
     </td>
   </tr>
   {% endfor %}

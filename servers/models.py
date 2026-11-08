@@ -139,6 +139,20 @@ class Server(models.Model):
         "sauvegardes gardées", default=10, validators=[MinValueValidator(1), MaxValueValidator(1000)],
         help_text="Les plus anciennes sont supprimées au-delà.",
     )
+    backup_only_with_players = models.BooleanField(
+        "seulement si des joueurs sont venus", default=True,
+        help_text="La sauvegarde planifiée est annulée si personne ne s'est connecté depuis la précédente.",
+    )
+
+    # Suivi d'état (écrit par le manager, pas par l'utilisateur).
+    last_action = models.CharField(max_length=10, blank=True, editable=False)
+    last_action_at = models.DateTimeField(null=True, blank=True, editable=False)
+    job = models.CharField(max_length=10, blank=True, editable=False)  # action en cours
+    job_detail = models.CharField(max_length=200, blank=True, editable=False)
+    job_started_at = models.DateTimeField(null=True, blank=True, editable=False)
+    job_error = models.TextField(blank=True, editable=False)  # échec de la dernière action
+    last_ready_at = models.DateTimeField(null=True, blank=True, editable=False)
+    players_seen_at = models.DateTimeField(null=True, blank=True, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
