@@ -19,6 +19,215 @@
   conteneur <code>{{ server.container_name }}</code> · image <code>{{ server.image }}</code>
 </p>
 
+<style>
+.mon{--s1:#2a78d6;--s2:#eb6834}
+@media (prefers-color-scheme:dark){.mon{--s1:#3987e5;--s2:#d95926}}
+.mon-head{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.mon-head h2{margin:0}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:7px;overflow:hidden}
+.seg button{border:0;background:var(--panel);color:var(--muted);padding:3px 10px;font:inherit;font-size:.85rem;cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--bg);color:var(--ink);font-weight:600}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:14px}
+.tile{border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.tile .k{font-size:.78rem;color:var(--muted)}
+.tile .v{font-size:1.35rem;font-weight:650;font-variant-numeric:tabular-nums;line-height:1.3}
+.tile .d{font-size:.78rem;color:var(--muted);overflow-wrap:anywhere}
+.tile .d.warn{color:var(--warn)}
+.charts{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(300px,1fr))}
+.chart h3{font-size:.85rem;font-weight:600;margin:0 0 2px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.chart .lg{font-weight:400;color:var(--muted);display:inline-flex;align-items:center;gap:5px}
+.chart .lg i{display:inline-block;width:12px;height:2px;border-radius:1px}
+.chart .box{position:relative}
+.chart svg{display:block;width:100%;height:130px;overflow:visible}
+.chart svg text{fill:var(--muted);font-size:10px;font-variant-numeric:tabular-nums}
+.chart .tip{position:absolute;top:0;pointer-events:none;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:4px 7px;font-size:.75rem;white-space:nowrap;box-shadow:0 2px 6px rgb(0 0 0/.12);z-index:2}
+.chart .tip b{font-variant-numeric:tabular-nums}
+.chart .empty{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:var(--muted);font-size:.8rem}
+</style>
+<section class="panel mon" id="mon">
+  <div class="mon-head">
+    <h2>Monitoring</h2>
+    <div class="seg" role="group" aria-label="Période">
+      <button type="button" data-h="1" aria-pressed="true">1 h</button>
+      <button type="button" data-h="6" aria-pressed="false">6 h</button>
+      <button type="button" data-h="24" aria-pressed="false">24 h</button>
+    </div>
+  </div>
+  <div class="tiles">
+    <div class="tile"><div class="k">CPU serveur</div><div class="v" id="t-cpu">–</div><div class="d" id="t-cpu-d"></div></div>
+    <div class="tile"><div class="k">RAM serveur</div><div class="v" id="t-mem">–</div><div class="d" id="t-mem-d"></div></div>
+    <div class="tile"><div class="k">TPS</div><div class="v" id="t-tps">–</div><div class="d" id="t-tps-d"></div></div>
+    <div class="tile"><div class="k">Joueurs</div><div class="v" id="t-pl">–</div><div class="d" id="t-pl-d"></div></div>
+    <div class="tile"><div class="k">RAM machine</div><div class="v" id="t-hmem">–</div><div class="d" id="t-hmem-d"></div></div>
+    <div class="tile"><div class="k">Température</div><div class="v" id="t-temp">–</div><div class="d" id="t-temp-d"></div></div>
+    <div class="tile"><div class="k">Disque /data</div><div class="v" id="t-disk">–</div><div class="d" id="t-disk-d"></div></div>
+  </div>
+  <div class="charts" id="charts"></div>
+  <p class="helptext" style="margin:10px 0 0">Mesure toutes les 20 s, conservée 24 h. CPU en % de la machine entière (<span id="ncpu">tous les</span> cœurs = 100 %). RAM serveur = mémoire réellement occupée par Java (heap + le reste).</p>
+</section>
+<script>
+(function(){
+  const url = "{% url 'monitoring_json' server.slug %}";
+  const root = document.getElementById("mon");
+  const chartsEl = document.getElementById("charts");
+  const NS = "http://www.w3.org/2000/svg";
+  let hours = 1, timer = null;
+  try { hours = +localStorage.getItem("mc-mon-h") || 1; } catch(e) {}
+
+  const css = v => getComputedStyle(root).getPropertyValue(v).trim();
+  const last = a => { for (let i = a.length - 1; i >= 0; i--) if (a[i] != null) return a[i]; return null; };
+  const go = mb => (mb / 1024).toFixed(1).replace(".", ",") + " Go";
+  const num = (v, d = 0) => v == null ? "–" : (+v).toFixed(d).replace(".", ",");
+  const hhmm = t => new Date(t).toLocaleTimeString("fr-FR", {hour: "2-digit", minute: "2-digit"});
+  const set = (id, v, d, warn) => {
+    document.getElementById(id).textContent = v;
+    const el = document.getElementById(id + "-d");
+    el.textContent = d || ""; el.classList.toggle("warn", !!warn);
+  };
+
+  // Graphique en ligne : une échelle, lignes coupées aux trous (serveur arrêté).
+  function frame(spec) {
+    const wrap = document.createElement("div"); wrap.className = "chart";
+    const h3 = document.createElement("h3"); h3.textContent = spec.title;
+    if (spec.series.length > 1) spec.series.forEach(s => {
+      const lg = document.createElement("span"); lg.className = "lg";
+      lg.innerHTML = `<i style="background:${s.color}"></i>`; lg.append(s.name); h3.append(lg);
+    });
+    const box = document.createElement("div"); box.className = "box";
+    wrap.append(h3, box); chartsEl.append(wrap);
+    return box;
+  }
+
+  // Dessiné une fois tous les cadres en place, pour mesurer leur vraie largeur.
+  function chart(spec, box, t, gap, now) {
+    const W = Math.max(200, box.clientWidth), H = 130, L = 34, R = 6, T = 8, B = 18;
+    const svg = document.createElementNS(NS, "svg"); svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    box.append(svg);
+    const t0 = now - hours * 3600e3, t1 = now;
+    const vals = spec.series.flatMap(s => s.values.filter(v => v != null));
+    if (!vals.length) {
+      const e = document.createElement("div"); e.className = "empty";
+      e.textContent = "Pas encore de mesure (serveur arrêté ou pas prêt)"; box.append(e);
+    }
+    let ymax = spec.ymax ?? Math.max(...vals, spec.minMax || 1);
+    if (spec.ymax == null) { const p = Math.pow(10, Math.floor(Math.log10(ymax))); ymax = Math.ceil(ymax / p * 2) / 2 * p; }
+    const x = v => L + (v - t0) / (t1 - t0) * (W - L - R);
+    const y = v => T + (1 - v / ymax) * (H - T - B);
+    const el = (tag, at) => { const n = document.createElementNS(NS, tag); for (const k in at) n.setAttribute(k, at[k]); svg.append(n); return n; };
+    const grid = css("--line");
+    [0, .5, 1].forEach(f => {
+      el("line", {x1: L, x2: W - R, y1: y(ymax * f), y2: y(ymax * f), stroke: grid, "stroke-width": 1});
+      el("text", {x: L - 5, y: y(ymax * f) + 3, "text-anchor": "end"}).textContent = spec.tick(ymax * f);
+    });
+    [[t0, "start"], [t1, "end"]].forEach(([v, a]) => { el("text", {x: x(v), y: H - 4, "text-anchor": a}).textContent = hhmm(v); });
+    spec.series.forEach(s => {
+      let d = "", prev = null;
+      t.forEach((tt, i) => {
+        const v = s.values[i];
+        if (v == null) { prev = null; return; }
+        d += (prev == null || tt - prev > gap ? "M" : "L") + x(tt).toFixed(1) + " " + y(Math.min(v, ymax)).toFixed(1);
+        prev = tt;
+      });
+      el("path", {d, fill: "none", stroke: s.color, "stroke-width": 2, "stroke-linejoin": "round", "stroke-linecap": "round"});
+      // Points isolés (une seule mesure entre deux trous) : sinon invisibles.
+      t.forEach((tt, i) => {
+        const v = s.values[i]; if (v == null) return;
+        const before = i > 0 && s.values[i - 1] != null && tt - t[i - 1] <= gap;
+        const after = i < t.length - 1 && s.values[i + 1] != null && t[i + 1] - tt <= gap;
+        if (!before && !after) el("circle", {cx: x(tt), cy: y(Math.min(v, ymax)), r: 2.5, fill: s.color});
+      });
+    });
+    // Survol : réticule + infobulle sur la mesure la plus proche.
+    const cross = el("line", {y1: T, y2: H - B, stroke: css("--muted"), "stroke-width": 1, "stroke-dasharray": "3 3", visibility: "hidden"});
+    const dots = spec.series.map(s => el("circle", {r: 4, fill: s.color, stroke: css("--panel"), "stroke-width": 2, visibility: "hidden"}));
+    const tip = document.createElement("div"); tip.className = "tip"; tip.hidden = true; box.append(tip);
+    const hide = () => { tip.hidden = true; cross.setAttribute("visibility", "hidden"); dots.forEach(d => d.setAttribute("visibility", "hidden")); };
+    svg.addEventListener("pointerleave", hide);
+    svg.addEventListener("pointermove", ev => {
+      if (!t.length) return;
+      const r = svg.getBoundingClientRect(), px = (ev.clientX - r.left) * W / r.width;
+      const tv = t0 + (px - L) / (W - L - R) * (t1 - t0);
+      let i = 0; t.forEach((tt, j) => { if (Math.abs(tt - tv) < Math.abs(t[i] - tv)) i = j; });
+      if (Math.abs(t[i] - tv) > gap) return hide();
+      const cx = x(t[i]);
+      cross.setAttribute("x1", cx); cross.setAttribute("x2", cx); cross.setAttribute("visibility", "visible");
+      tip.replaceChildren(document.createTextNode(hhmm(t[i])));
+      spec.series.forEach((s, k) => {
+        const v = s.values[i];
+        dots[k].setAttribute("visibility", v == null ? "hidden" : "visible");
+        if (v != null) { dots[k].setAttribute("cx", cx); dots[k].setAttribute("cy", y(Math.min(v, ymax))); }
+        const line = document.createElement("div");
+        line.append((spec.series.length > 1 ? s.name + " : " : ""));
+        const b = document.createElement("b"); b.textContent = v == null ? "–" : spec.fmt(v); line.append(b);
+        tip.append(line);
+      });
+      tip.hidden = false;
+      const left = cx / W * r.width;
+      tip.style.left = Math.min(Math.max(0, left + 10), r.width - tip.offsetWidth) + "px";
+      if (left + 10 + tip.offsetWidth > r.width) tip.style.left = Math.max(0, left - tip.offsetWidth - 10) + "px";
+    });
+  }
+
+  async function refresh() {
+    let data;
+    try { data = await (await fetch(url + "?h=" + hours, {headers: {"Accept": "application/json"}})).json(); }
+    catch(e) { return; }
+    const s = data.series.server, h = data.series.host, host = data.host;
+    document.getElementById("ncpu").textContent = host.ncpu;
+    const running = !["stopped", "error"].includes(data.state);
+    const cpu = running ? last(s.cpu) : null, mem = running ? last(s.mem_mb) : null;
+    set("t-cpu", cpu == null ? "–" : num(cpu) + " %", cpu == null ? "" : `≈ ${num(cpu * host.ncpu / 100, 1)} cœur(s)`);
+    set("t-mem", mem == null ? "–" : go(mem), `heap ${data.heap}`);
+    const tps = data.state === "ready" ? last(s.tps) : null, mspt = data.state === "ready" ? last(s.mspt) : null;
+    set("t-tps", tps == null ? "–" : num(tps, 1), tps == null ? (data.state === "ready" ? "commande TPS indisponible" : "serveur pas prêt")
+        : (tps < 18 ? "⚠ le serveur rame · " : "") + (mspt == null ? "" : num(mspt, 1) + " ms/tick"), tps != null && tps < 18);
+    const pl = data.state === "ready" ? last(s.players) : null;
+    set("t-pl", pl == null ? "–" : `${data.players.length || pl}/${data.max_players}`, data.players.join(", "));
+    const used = host.mem_total_mb - host.mem_available_mb;
+    set("t-hmem", go(used), `sur ${go(host.mem_total_mb)} · swap ${go(host.swap_mb)} · charge ${host.load.map(v => num(v, 2)).join(" ")}`, host.mem_available_mb < 500);
+    set("t-temp", host.temp == null ? "–" : num(host.temp) + " °C", host.temp >= 80 ? "⚠ chaud, le Pi va ralentir" : "", host.temp >= 80);
+    set("t-disk", host.disk ? `${num(host.disk.used_gb)} Go` : "–", host.disk ? `sur ${num(host.disk.total_gb)} Go` : "");
+
+    // Les deux séries (serveur, machine) partagent un axe temps : on aligne sur l'union.
+    const tAll = [...new Set([...s.t, ...h.t])].sort((a, b) => a - b);
+    const pick = (src, f) => { const m = new Map(src.t.map((tt, i) => [tt, src[f][i]])); return tAll.map(tt => m.has(tt) ? m.get(tt) : null); };
+    const gap = Math.max(hours * 3600e3 / 240, data.sample_seconds * 1000) * 3;
+    const s1 = css("--s1"), s2 = css("--s2");
+    chartsEl.replaceChildren();
+    const charts = [
+      {title: "CPU", ymax: 100, tick: v => v + " %", fmt: v => num(v) + " %",
+       series: [{name: "Serveur", values: pick(s, "cpu"), color: s1}, {name: "Machine", values: pick(h, "cpu"), color: s2}]},
+      {title: "RAM", ymax: host.mem_total_mb / 1024, tick: v => num(v) + " Go", fmt: v => num(v, 1) + " Go",
+       series: [{name: "Serveur", values: pick(s, "mem_mb").map(v => v == null ? null : v / 1024), color: s1},
+                {name: "Machine", values: pick(h, "mem_mb").map(v => v == null ? null : v / 1024), color: s2}]},
+      {title: "TPS (20 = normal)", ymax: 20, tick: v => num(v), fmt: v => num(v, 1),
+       series: [{name: "TPS", values: pick(s, "tps"), color: s1}]},
+      {title: "Joueurs connectés", ymax: data.max_players || 1, tick: v => num(v, Number.isInteger(v) ? 0 : 1), fmt: v => num(v),
+       series: [{name: "Joueurs", values: pick(s, "players"), color: s1}]},
+      {title: "Swap utilisé", minMax: 1, tick: v => num(v, 1) + " Go", fmt: v => num(v, 2) + " Go",
+       series: [{name: "Swap", values: pick(h, "swap_mb").map(v => v == null ? null : v / 1024), color: s1}]},
+      {title: "Température du Pi", minMax: 60, tick: v => num(v) + " °C", fmt: v => num(v, 1) + " °C",
+       series: [{name: "Température", values: pick(h, "temp"), color: s1}]},
+    ];
+    const boxes = charts.map(frame);
+    charts.forEach((c, i) => chart(c, boxes[i], tAll, gap, data.now));
+  }
+
+  root.querySelectorAll(".seg button").forEach(b => {
+    b.setAttribute("aria-pressed", +b.dataset.h === hours);
+    b.addEventListener("click", () => {
+      hours = +b.dataset.h;
+      try { localStorage.setItem("mc-mon-h", hours); } catch(e) {}
+      root.querySelectorAll(".seg button").forEach(o => o.setAttribute("aria-pressed", o === b));
+      refresh();
+    });
+  });
+  refresh();
+  timer = setInterval(() => { if (!document.hidden) refresh(); }, 20000);
+  let rs; window.addEventListener("resize", () => { clearTimeout(rs); rs = setTimeout(refresh, 250); });
+})();
+</script>
+
 <div class="grid">
   <section class="panel">
     <h2>Console</h2>

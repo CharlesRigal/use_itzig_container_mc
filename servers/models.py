@@ -299,3 +299,20 @@ class DefaultWhitelistEntry(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class Metric(models.Model):
+    """Échantillon de monitoring (toutes les 20 s). server vide = la machine hôte."""
+
+    server = models.ForeignKey(Server, null=True, blank=True, on_delete=models.CASCADE, related_name="metrics")
+    at = models.DateTimeField(db_index=True)
+    cpu = models.FloatField(null=True)  # % de la machine entière
+    mem_mb = models.FloatField(null=True)  # RAM résidente (serveur) ou utilisée (hôte)
+    swap_mb = models.FloatField(null=True)
+    temp = models.FloatField(null=True)
+    players = models.IntegerField(null=True)
+    tps = models.FloatField(null=True)
+    mspt = models.FloatField(null=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["server", "at"])]

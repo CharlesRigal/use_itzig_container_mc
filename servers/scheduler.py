@@ -10,6 +10,7 @@ from django.conf import settings
 
 log = logging.getLogger("servers")
 TICK_SECONDS = 60
+SAMPLE_SECONDS = 20  # échantillonnage du monitoring
 _started = False
 _last_check = {}  # slug -> datetime du dernier contrôle « rien n'a changé »
 
@@ -57,13 +58,23 @@ def run_due_backups(now=None):
 
 
 def _loop(lock_file):
-    log.info("planificateur de sauvegardes démarré")
+    from . import monitoring
+
+    log.info("planificateur (sauvegardes + monitoring) démarré")
+    last_backup_check = 0.0
     while True:
+        started = time.monotonic()
         try:
-            run_due_backups()
+            monitoring.sample()
         except Exception:
-            log.exception("planificateur de sauvegardes")
-        time.sleep(TICK_SECONDS)
+            log.exception("monitoring")
+        if started - last_backup_check >= TICK_SECONDS:
+            last_backup_check = started
+            try:
+                run_due_backups()
+            except Exception:
+                log.exception("planificateur de sauvegardes")
+        time.sleep(max(1.0, SAMPLE_SECONDS - (time.monotonic() - started)))
 
 
 def start():

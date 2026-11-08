@@ -2,6 +2,7 @@ import logging
 import shlex
 import shutil
 import tarfile
+import time
 from pathlib import Path
 
 from django.contrib import messages
@@ -16,7 +17,7 @@ from django.views.decorators.http import require_POST
 from django.urls import reverse
 from django.utils.http import urlencode
 
-from . import backups, configs, jobs, podman, status
+from . import backups, configs, jobs, monitoring, podman, scheduler, status
 from .forms import AppSettingsForm, BackupScheduleForm, CommandForm, PlayerForm, ServerCreateForm, ServerForm, next_free_port
 from .models import AppSettings, DefaultWhitelistEntry, Server, WhitelistEntry, cf_key_file
 
@@ -52,6 +53,25 @@ def status_json(request):
     """État de tous les serveurs, interrogé par les pages toutes les quelques secondes."""
     statuses = status.collect(Server.objects.all())
     return JsonResponse({k: status.as_json(v) for k, v in statuses.items()})
+
+
+@login_required
+def monitoring_json(request, slug):
+    """Historique (1, 6 ou 24 h) et valeurs instantanées du panneau de monitoring."""
+    server = get_object_or_404(Server, slug=slug)
+    hours = {"1": 1, "6": 6, "24": 24}.get(request.GET.get("h"), 1)
+    st = status.for_server(server)
+    players = monitoring.player_names(server) if st["key"] == "ready" and st.get("players") else []
+    return JsonResponse({
+        "series": monitoring.series(server, hours),
+        "host": monitoring.host_now(AppSettings.get().data_root),
+        "heap": server.memory,
+        "max_players": st.get("max") or server.max_players,
+        "players": players,
+        "state": st["key"],
+        "sample_seconds": scheduler.SAMPLE_SECONDS,
+        "now": int(time.time() * 1000),  # l'horloge du serveur, pas celle du navigateur
+    })
 
 
 def _launch(request, server, action, success):
