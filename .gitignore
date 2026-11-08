@@ -6,3 +6,5 @@ staticfiles/
 data/
 logs/
 secrets/
+.install.env
+.scheduler.lock

@@ -30,19 +30,29 @@ Interface web Django pour gérer plusieurs serveurs Minecraft dans des conteneur
 
 ## Installation
 
+Prérequis : Linux avec systemd, podman (rootless), Python 3.10+ et `python3-venv`.
+Sur Raspberry Pi OS / Debian : `sudo apt install podman python3-venv git`.
+
 ```bash
-cd ~/mcmanager
-python3 -m venv .venv
-.venv/bin/pip install -r requirements.txt
-.venv/bin/python manage.py migrate
-.venv/bin/python manage.py collectstatic --noinput
-.venv/bin/python manage.py createsuperuser
-mkdir -p ~/.config/systemd/user && cp deploy/mcmanager.service ~/.config/systemd/user/
-systemctl --user daemon-reload && systemctl --user enable --now mcmanager
-sudo loginctl enable-linger $USER   # service et serveurs actifs sans session ouverte
+git clone https://github.com/CharlesRigal/use_itzig_container_mc.git mcmanager
+cd mcmanager && ./install.sh
 ```
 
-Interface : `http://rp-01.local:8000`. Logs du service : `journalctl --user -u mcmanager -f`.
+Le script vérifie les prérequis, demande le port (8000) et le dossier des mondes
+(`/data/minecraft`), crée l'environnement Python, la base et le compte admin, installe le
+service systemd utilisateur, active le « linger » (sudo, une seule fois) et télécharge
+l'image Minecraft. Il peut être relancé sans risque.
+
+| Commande | Effet |
+|---|---|
+| `./install.sh --update` | `git pull`, dépendances, migrations, redémarrage |
+| `./install.sh --uninstall` | retire le service ; base, mondes et sauvegardes conservés |
+| `./install.sh --port 8001 --data /chemin --name autre` | autre port, dossier ou nom de service (plusieurs instances) |
+| `./install.sh --yes` | aucune question (valeurs par défaut ou celles de `.install.env`) |
+
+Admin sans question : `MCM_ADMIN_USER=… MCM_ADMIN_PASSWORD=… ./install.sh --yes`.
+
+Interface : `http://<machine>.local:8000`. Logs du service : `journalctl --user -u mcmanager -f`.
 
 ## Variables d'environnement (optionnelles)
 
