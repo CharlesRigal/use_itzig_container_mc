@@ -74,6 +74,10 @@ def _run(pk, action, func):
         func(server)
         Server.objects.filter(pk=pk).update(job="", job_detail="")
         log.info("%s %s terminé", action, server.slug)
+        if server.upnp_enabled:
+            from . import upnp
+
+            upnp.sync_quietly()  # port ouvert ou fermé tout de suite, sans attendre le planificateur
     except Exception as exc:  # noqa: BLE001 - tout échec doit libérer le serveur
         log.exception("%s du serveur %s en échec", action, pk)
         Server.objects.filter(pk=pk).update(job="", job_detail="", job_error=f"Échec du {LABELS.get(action, action)} : {exc}"[:2000])

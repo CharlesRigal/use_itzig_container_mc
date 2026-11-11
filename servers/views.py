@@ -17,7 +17,7 @@ from django.views.decorators.http import require_POST
 from django.urls import reverse
 from django.utils.http import urlencode
 
-from . import backups, configs, jobs, monitoring, podman, scheduler, status
+from . import backups, configs, jobs, monitoring, podman, scheduler, status, upnp
 from .forms import AppSettingsForm, BackupScheduleForm, CommandForm, PlayerForm, ServerCreateForm, ServerForm, next_free_port
 from .models import AppSettings, DefaultWhitelistEntry, Server, WhitelistEntry, cf_key_file
 
@@ -72,6 +72,26 @@ def monitoring_json(request, slug):
         "sample_seconds": scheduler.SAMPLE_SECONDS,
         "now": int(time.time() * 1000),  # l'horloge du serveur, pas celle du navigateur
     })
+
+
+@login_required
+@require_POST
+def upnp_toggle(request, slug):
+    """Active ou coupe l'ouverture automatique du port sur la box."""
+    server = get_object_or_404(Server, slug=slug)
+    server.upnp_enabled = request.POST.get("enabled") == "1"
+    server.save(update_fields=["upnp_enabled"])
+    upnp.sync_quietly()
+    server.refresh_from_db()
+    if not server.upnp_enabled:
+        messages.success(request, "Accès depuis Internet fermé.")
+    elif server.upnp_address:
+        messages.success(request, f"Port ouvert : tes amis se connectent sur {server.upnp_address}.")
+    elif server.upnp_error:
+        messages.error(request, f"Ouverture du port impossible : {server.upnp_error}")
+    else:
+        messages.success(request, "Le port sera ouvert dès que le serveur sera démarré.")
+    return redirect("server_detail", slug=slug)
 
 
 def _launch(request, server, action, success):

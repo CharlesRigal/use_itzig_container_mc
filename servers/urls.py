@@ -12,6 +12,7 @@ urlpatterns = [
     path("s/<slug:slug>/", views.server_detail, name="server_detail"),
     path("s/<slug:slug>/action/<str:action>/", views.server_action, name="server_action"),
     path("s/<slug:slug>/delete/", views.server_delete, name="server_delete"),
+    path("s/<slug:slug>/upnp/", views.upnp_toggle, name="upnp_toggle"),
     path("s/<slug:slug>/monitoring.json", views.monitoring_json, name="monitoring_json"),
     path("s/<slug:slug>/logs/",views.server_logs, name="server_logs"),
     path("s/<slug:slug>/command/", views.server_command, name="server_command"),

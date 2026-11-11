@@ -153,6 +153,12 @@ class Server(models.Model):
     job_error = models.TextField(blank=True, editable=False)  # échec de la dernière action
     last_ready_at = models.DateTimeField(null=True, blank=True, editable=False)
     players_seen_at = models.DateTimeField(null=True, blank=True, editable=False)
+    upnp_enabled = models.BooleanField(
+        "ouvrir le port sur Internet (UPnP)", default=False,
+        help_text="Demande à la box de rediriger le port tant que le serveur tourne.",
+    )
+    upnp_address = models.CharField(max_length=64, blank=True, editable=False)  # adresse publique active
+    upnp_error = models.TextField(blank=True, editable=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

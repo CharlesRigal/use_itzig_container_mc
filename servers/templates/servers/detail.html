@@ -18,6 +18,20 @@
   Adresse : <strong>{{ request.get_host|cut:":8000" }}:{{ server.port }}</strong> ·
   conteneur <code>{{ server.container_name }}</code> · image <code>{{ server.image }}</code>
 </p>
+<div class="row" style="margin:-6px 0 12px">
+  <span>Internet :
+    {% if server.upnp_address %}<strong>{{ server.upnp_address }}</strong> <span class="muted">(port ouvert sur la box)</span>
+    {% elif server.upnp_enabled %}<span class="muted">ouverture automatique activée, port ouvert pendant que le serveur tourne</span>
+    {% else %}<span class="muted">non accessible (réseau local seulement)</span>{% endif %}
+  </span>
+  <form class="inline" method="post" action="{% url 'upnp_toggle' server.slug %}">{% csrf_token %}
+    {% if server.upnp_enabled %}<input type="hidden" name="enabled" value="0"><button class="btn small">Fermer l'accès Internet</button>
+    {% else %}<input type="hidden" name="enabled" value="1"><button class="btn small" title="Redirection automatique du port {{ server.port }} sur la box (UPnP)">Ouvrir sur Internet</button>{% endif %}
+  </form>
+</div>
+{% if server.upnp_enabled and server.upnp_error %}<pre class="errbox">UPnP : {{ server.upnp_error }}</pre>{% endif %}
+{% if server.upnp_enabled and not server.whitelist_enabled %}<p class="sub"><span class="warn">⚠ Whitelist désactivée : n'importe qui sur Internet peut rejoindre ce serveur.</span></p>{% endif %}
+{% if server.upnp_enabled and not server.online_mode %}<p class="sub"><span class="warn">⚠ Mode hors ligne : les pseudos ne sont pas vérifiés, quelqu'un peut se faire passer pour un joueur de la whitelist.</span></p>{% endif %}
 
 <style>
 .mon{--s1:#2a78d6;--s2:#eb6834}

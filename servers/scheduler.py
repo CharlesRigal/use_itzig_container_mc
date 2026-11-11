@@ -11,6 +11,7 @@ from django.conf import settings
 log = logging.getLogger("servers")
 TICK_SECONDS = 60
 SAMPLE_SECONDS = 20  # échantillonnage du monitoring
+UPNP_SECONDS = 600  # renouvellement des redirections (bail d'une heure)
 _started = False
 _last_check = {}  # slug -> datetime du dernier contrôle « rien n'a changé »
 
@@ -58,16 +59,19 @@ def run_due_backups(now=None):
 
 
 def _loop(lock_file):
-    from . import monitoring
+    from . import monitoring, upnp
 
-    log.info("planificateur (sauvegardes + monitoring) démarré")
-    last_backup_check = 0.0
+    log.info("planificateur (sauvegardes + monitoring + UPnP) démarré")
+    last_backup_check = last_upnp = 0.0
     while True:
         started = time.monotonic()
         try:
             monitoring.sample()
         except Exception:
             log.exception("monitoring")
+        if started - last_upnp >= UPNP_SECONDS:
+            last_upnp = started
+            upnp.sync_quietly()
         if started - last_backup_check >= TICK_SECONDS:
             last_backup_check = started
             try:
