@@ -10,8 +10,8 @@ class ServersConfig(AppConfig):
     verbose_name = "Serveurs Minecraft"
 
     def ready(self):
-        # Uniquement dans le service web (gunicorn), pas pour manage.py migrate/shell/tests.
-        if "gunicorn" in os.path.basename(sys.argv[0]) or os.environ.get("MCM_SCHEDULER") == "1":
+        # Uniquement dans le service web (uvicorn), pas pour manage.py migrate/shell/tests.
+        if os.path.basename(sys.argv[0]) in ("uvicorn", "gunicorn") or os.environ.get("MCM_SCHEDULER") == "1":
             from . import scheduler
 
             scheduler.start()

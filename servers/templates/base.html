@@ -101,9 +101,14 @@ function mcApply(all) {
       if (st.warning) { const w = document.createElement("span"); w.className = "warn"; w.textContent = " ⚠ " + st.warning; el.append(w); }
     });
     document.querySelectorAll(`[data-slug="${slug}"][data-show]`).forEach(el => { el.hidden = !el.dataset.show.split(" ").includes(st.key); });
-    document.querySelectorAll(`[data-slug="${slug}"][data-enable]`).forEach(el => { el.disabled = !el.dataset.enable.split(" ").includes(st.key); });
+    // data-backup : bouton bloqué aussi pendant une sauvegarde ou restauration.
+    document.querySelectorAll(`[data-slug="${slug}"][data-enable]`).forEach(el => {
+      el.disabled = !el.dataset.enable.split(" ").includes(st.key) || ("backup" in el.dataset && st.backup_busy);
+    });
+    document.querySelectorAll(`[data-backup-busy="${slug}"]`).forEach(el => { el.hidden = !st.backup_busy; });
     document.querySelectorAll(`[data-error="${slug}"]`).forEach(el => { el.hidden = !st.error; el.textContent = st.error || ""; });
     if (prev && prev.key !== st.key) document.dispatchEvent(new CustomEvent("mc-state", {detail: {slug, st, prev}}));
+    document.dispatchEvent(new CustomEvent("mc-status", {detail: {slug, st, prev}}));
   }
 }
 function mcConfirmStop(slug) {
@@ -113,12 +118,24 @@ function mcConfirmStop(slug) {
   return true;
 }
 mcApply(JSON.parse(document.getElementById("initial-status").textContent));
-setInterval(async () => {
-  try {
-    const r = await fetch("{% url 'status_json' %}", {credentials: "same-origin"});
-    if (r.ok) mcApply(await r.json());
-  } catch (e) {}
-}, 4000);
+
+// Flux poussé par le serveur (Server-Sent Events) : aucune interrogation périodique.
+// window.mcStream = {slug, logs} (page d'un serveur) limite le flux à ce serveur.
+(function mcConnect() {
+  const opts = window.mcStream || {};
+  const q = new URLSearchParams();
+  if (opts.slug) q.set("slug", opts.slug);
+  if (opts.logs) q.set("logs", "1");
+  const es = new EventSource("{% url 'events' %}?" + q);
+  es.addEventListener("status", e => mcApply(JSON.parse(e.data)));
+  // Les autres événements (logs, mesures) sont relayés aux scripts de la page.
+  for (const type of ["log", "logs_init", "metrics"]) {
+    es.addEventListener(type, e => document.dispatchEvent(new CustomEvent("mc-" + type, {detail: JSON.parse(e.data)})));
+  }
+  // Reconnexion automatique du navigateur ; s'il abandonne (réponse en erreur pendant un
+  // redémarrage du service), on relance nous-mêmes.
+  es.onerror = () => { if (es.readyState === EventSource.CLOSED) setTimeout(mcConnect, 5000); };
+})();
 </script>
 {% endif %}
 </body>

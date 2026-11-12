@@ -12,13 +12,12 @@ import logging
 import os
 import re
 import shutil
-import tarfile
 import time
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 
-from . import podman
+from . import hub, podman
 
 log = logging.getLogger("servers")
 
@@ -73,6 +72,9 @@ def _counts_as_change(rel):
     return Path(rel).name not in IGNORED_FOR_CHANGES
 
 
+RUNNING = set()  # slugs dont une sauvegarde ou restauration est en cours (processus unique)
+
+
 @contextmanager
 def _lock(server):
     server.backup_dir.mkdir(parents=True, exist_ok=True)
@@ -81,7 +83,13 @@ def _lock(server):
             fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise OSError("Une sauvegarde ou restauration de ce serveur est déjà en cours.") from exc
-        yield
+        RUNNING.add(server.slug)
+        hub.notify()
+        try:
+            yield
+        finally:
+            RUNNING.discard(server.slug)
+            hub.notify()  # « en cours » disparaît, la nouvelle sauvegarde apparaît
 
 
 # --- lecture -----------------------------------------------------------------------
@@ -275,34 +283,11 @@ def delete_backup(server, name):
         shutil.rmtree(snapshot_path(server, name))
 
 
-class _Chunks:
-    """Fichier en écriture seule qui accumule des morceaux pour une réponse en streaming."""
+def tar_command(server, name):
+    """Commande produisant l'archive .tar.gz d'un snapshot sur sa sortie standard.
 
-    def __init__(self):
-        self.parts = []
-
-    def write(self, data):
-        self.parts.append(bytes(data))
-        return len(data)
-
-    def flush(self):
-        pass
-
-    def take(self):
-        data, self.parts = b"".join(self.parts), []
-        return data
-
-
-def stream_tar(server, name):
-    """Archive .tar.gz d'un snapshot, générée à la volée (rien n'est écrit sur le disque)."""
+    `tar` en sous-processus plutôt que tarfile : mémoire constante quelle que soit la taille
+    des fichiers, compression en C, et le débit suit celui du client (lecture asynchrone).
+    """
     source = snapshot_path(server, name)
-    out = _Chunks()
-    with tarfile.open(fileobj=out, mode="w|gz") as tar:
-        for path in sorted(source.rglob("*")):
-            if path.name == META and path.parent == source:
-                continue
-            tar.add(path, arcname=path.relative_to(source).as_posix(), recursive=False)
-            chunk = out.take()
-            if chunk:
-                yield chunk
-    yield out.take()
+    return ["tar", "-czf", "-", f"--exclude=./{META}", "-C", str(source), "."]

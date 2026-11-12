@@ -1,6 +1,6 @@
 """Actions longues (démarrer, arrêter, restaurer…) en arrière-plan, une seule à la fois par serveur.
 
-L'action en cours est écrite en base : tous les workers gunicorn la voient, et un double clic
+L'action en cours est écrite en base : elle survit à un redémarrage du service, et un double clic
 ne lance pas deux arrêts.
 """
 
@@ -11,7 +11,7 @@ from django.db import close_old_connections
 from django.db.models import Q
 from django.utils import timezone
 
-from . import backups, podman
+from . import backups, hub, podman
 from .models import Server
 from .status import JOB_STALE
 
@@ -26,6 +26,7 @@ class Busy(Exception):
 
 def set_detail(server, text):
     Server.objects.filter(pk=server.pk).update(job_detail=text[:200])
+    hub.notify()
 
 
 def _start(server):
@@ -64,6 +65,7 @@ def launch(server, action, func=None, detail=""):
     if not taken:
         current = Server.objects.filter(pk=server.pk).values_list("job", flat=True).first()
         raise Busy(f"Une action est déjà en cours ({LABELS.get(current, current)}).")
+    hub.notify()
     threading.Thread(target=_run, args=(server.pk, action, func), daemon=True, name=f"job-{server.slug}").start()
 
 
@@ -82,6 +84,7 @@ def _run(pk, action, func):
         log.exception("%s du serveur %s en échec", action, pk)
         Server.objects.filter(pk=pk).update(job="", job_detail="", job_error=f"Échec du {LABELS.get(action, action)} : {exc}"[:2000])
     finally:
+        hub.notify()
         close_old_connections()
 
 

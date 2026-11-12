@@ -196,6 +196,9 @@ def sample():
                 row.tps, row.mspt = t
         rows.append(row)
     Metric.objects.bulk_create(rows)
+    from . import hub
+
+    hub.publish("metrics", {})
     _samples += 1
     if _samples % 180 == 1:
         Metric.objects.filter(at__lt=now_wall - KEEP).delete()

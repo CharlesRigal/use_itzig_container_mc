@@ -1,4 +1,4 @@
-"""Sauvegardes planifiées : un fil dans le service web, un seul pour tous les workers gunicorn."""
+"""Sauvegardes planifiées : un fil dans le service web, un seul même si plusieurs processus tournent."""
 
 import fcntl
 import logging
@@ -92,5 +92,5 @@ def start():
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except BlockingIOError:
         lock_file.close()
-        return  # un autre worker gunicorn s'en occupe
+        return  # un autre processus s'en occupe
     threading.Thread(target=_loop, args=(lock_file,), daemon=True, name="backup-scheduler").start()

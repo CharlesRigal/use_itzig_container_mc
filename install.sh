@@ -160,10 +160,11 @@ After=network-online.target
 
 [Service]
 WorkingDirectory=$APP_DIR
-ExecStart=$APP_DIR/.venv/bin/gunicorn mcmanager.wsgi -b 0.0.0.0:$PORT -w 2 --threads 4 --timeout 600
+# Un seul processus : les flux en direct (SSE) et le planificateur partagent sa mémoire.
+ExecStart=$APP_DIR/.venv/bin/uvicorn mcmanager.asgi:application --host 0.0.0.0 --port $PORT --timeout-graceful-shutdown 5 --no-access-log
 Restart=on-failure
 # Les serveurs Minecraft démarrés depuis l'interface vivent dans le cgroup du service :
-# au redémarrage, seul gunicorn doit être arrêté, pas les conteneurs.
+# au redémarrage, seul le serveur web doit être arrêté, pas les conteneurs.
 KillMode=process
 
 [Install]

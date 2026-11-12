@@ -2,6 +2,7 @@
 {% block title %}{{ server.name }} · MC Manager{% endblock %}
 {% block content %}
 {% with slug=server.slug %}
+<script>window.mcStream = {slug: "{{ slug }}", logs: true};</script>
 <div class="row" style="justify-content:space-between">
   <h1>{{ server.name }} <span class="state {{ st.color }}" data-badge="{{ slug }}">{{ st.label }}</span></h1>
   <div class="row">
@@ -237,7 +238,9 @@
     });
   });
   refresh();
-  timer = setInterval(() => { if (!document.hidden) refresh(); }, 20000);
+  // Nouvelle mesure (toutes les 20 s) annoncée par le serveur.
+  document.addEventListener("mc-metrics", () => { if (!document.hidden) refresh(); });
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
   let rs; window.addEventListener("resize", () => { clearTimeout(rs); rs = setTimeout(refresh, 250); });
 })();
 </script>
@@ -269,7 +272,8 @@
       <button class="btn small">Ajouter les joueurs de la whitelist par défaut</button>
     </form>
 
-    <h2 style="margin-top:20px">Sauvegardes</h2>
+    <div id="backups-block">
+    <h2 style="margin-top:20px">Sauvegardes <span class="state work" data-backup-busy="{{ slug }}" hidden>en cours</span></h2>
     <form method="post" action="{% url 'backup_schedule' server.slug %}" class="form" style="margin-bottom:10px">{% csrf_token %}
       <div class="row">
         <span class="check">{{ schedule_form.backup_enabled }} {{ schedule_form.backup_enabled.label_tag }}</span>
@@ -292,10 +296,10 @@
     {% with ok="stopped ready unresponsive error" %}
     <div class="row" style="margin-bottom:8px">
       <form class="inline" method="post" action="{% url 'backup_create' slug %}">{% csrf_token %}
-        <button class="btn primary" data-slug="{{ slug }}" data-enable="{{ ok }}">Sauvegarder maintenant</button>
+        <button class="btn primary" data-slug="{{ slug }}" data-enable="{{ ok }}" data-backup>Sauvegarder maintenant</button>
       </form>
       <form class="inline" method="post" action="{% url 'backup_create' slug %}">{% csrf_token %}
-        <input type="hidden" name="force" value="1"><button class="btn small" title="Même si rien n'a changé" data-slug="{{ slug }}" data-enable="{{ ok }}">Forcer</button>
+        <input type="hidden" name="force" value="1"><button class="btn small" title="Même si rien n'a changé" data-slug="{{ slug }}" data-enable="{{ ok }}" data-backup>Forcer</button>
       </form>
     </div>
     {% if backups %}
@@ -306,7 +310,7 @@
           <span class="muted" title="Données nouvelles dans cette sauvegarde / taille complète du monde">+{{ b.new_mb }} Mo · {{ b.total_mb }} Mo au total</span></td>
         <td style="text-align:right;white-space:nowrap">
           <a class="btn small" href="{% url 'backup_download' server.slug b.name %}" title="Archive .tar.gz">↓</a>
-          <form class="inline" method="post" action="{% url 'backup_restore' slug b.name %}" onsubmit="return confirm('Remplacer le monde actuel par cette sauvegarde ? L\'état actuel sera sauvegardé avant.')">{% csrf_token %}<button class="btn small" data-slug="{{ slug }}" data-enable="{{ ok }}">Restaurer</button></form>
+          <form class="inline" method="post" action="{% url 'backup_restore' slug b.name %}" onsubmit="return confirm('Remplacer le monde actuel par cette sauvegarde ? L\'état actuel sera sauvegardé avant.')">{% csrf_token %}<button class="btn small" data-slug="{{ slug }}" data-enable="{{ ok }}" data-backup>Restaurer</button></form>
           <form class="inline" method="post" action="{% url 'backup_delete' server.slug b.name %}" onsubmit="return confirm('Supprimer cette sauvegarde ?')">{% csrf_token %}<button class="btn small danger">×</button></form>
         </td>
       </tr>
@@ -315,6 +319,7 @@
     <p class="helptext">Sauvegardes incrémentales : seuls les fichiers modifiés prennent de la place (« +… Mo »).</p>
     {% else %}<p class="muted">Aucune sauvegarde.</p>{% endif %}
     {% endwith %}
+    </div>
   </section>
 </div>
 
@@ -332,19 +337,34 @@
 (function(){
   const slug = "{{ server.slug }}";
   const pre = document.getElementById("logs");
-  const url = "{% url 'server_logs' server.slug %}";
-  async function refresh(){
-    try{
-      const r = await fetch(url, {credentials:"same-origin"});
-      const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
-      pre.textContent = (await r.text()) || "(aucun log : le serveur n'a pas encore démarré)";
-      if (atBottom) pre.scrollTop = pre.scrollHeight;
-    }catch(e){}
+  const EMPTY = "(aucun log : le serveur n'a pas encore démarré)";
+  const MAX = 2000;  // lignes gardées dans la console
+  let lines = [];
+  function render(){
+    const atBottom = pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 20;
+    if (lines.length > MAX) lines = lines.slice(-MAX);
+    pre.textContent = lines.length ? lines.join("\n") : EMPTY;
+    if (atBottom) pre.scrollTop = pre.scrollHeight;
   }
-  refresh();
-  // Logs rafraîchis tant que le serveur n'est pas arrêté.
-  setInterval(() => { const k = (window.mcState[slug] || {}).key; if (k && k !== "stopped") refresh(); }, 3000);
-  // Une action vient de finir (ex. restauration) : on recharge pour mettre à jour les listes.
+  // Logs poussés par le serveur : l'historique à la connexion, puis les nouvelles lignes.
+  document.addEventListener("mc-logs_init", e => { lines = e.detail.lines.slice(); render(); pre.scrollTop = pre.scrollHeight; });
+  document.addEventListener("mc-log", e => { lines.push(...e.detail.lines); render(); });
+
+  // Nouvelle sauvegarde ou fin de sauvegarde : seul le bloc Sauvegardes est remplacé.
+  async function reloadBackups(){
+    const cur = document.getElementById("backups-block");
+    if (cur.contains(document.activeElement)) return;  // ne pas écraser une saisie en cours
+    try {
+      const r = await fetch(location.pathname, {credentials: "same-origin"});
+      const fresh = new DOMParser().parseFromString(await r.text(), "text/html").getElementById("backups-block");
+      if (fresh) { cur.replaceWith(fresh); mcApply({[slug]: window.mcState[slug]}); }
+    } catch(e) {}
+  }
+  document.addEventListener("mc-status", e => {
+    const {st, prev} = e.detail;
+    if (e.detail.slug === slug && prev && (prev.backup !== st.backup || prev.backup_busy !== st.backup_busy)) reloadBackups();
+  });
+  // Une restauration vient de finir : le monde a changé, on recharge toute la page.
   document.addEventListener("mc-state", e => {
     if (e.detail.slug === slug && e.detail.prev.key === "restoring") location.reload();
   });

@@ -193,32 +193,53 @@ def _record(server, key, info):
             setattr(server, k, v)
 
 
+def backup_info(server):
+    """Dernière sauvegarde et sauvegarde en cours : une lecture de dossier, rien de plus."""
+    from . import backups
+
+    last = backups.latest(server)
+    return {"backup": last.name if last else "", "backup_busy": server.slug in backups.RUNNING}
+
+
+def describe(server, ps, pong):
+    """État d'un serveur à partir de sa ligne `podman ps` et du résultat du ping."""
+    try:
+        key, info = _compute(server, ps, pong)
+    except podman.PodmanError as exc:
+        key, info = "unknown", {"error": str(exc)}
+    _record(server, key, info)
+    label, color = STATES[key]
+    return {"key": key, "label": label, "color": color, "job": server.job, **info, **backup_info(server)}
+
+
+def ps_by_name():
+    try:
+        ps_all = podman.ps_json()
+    except podman.PodmanError:
+        ps_all = podman.ps_json()  # un conteneur recréé à l'instant peut faire échouer ps
+    return {n: c for c in ps_all for n in (c.get("Names") or [])}
+
+
+def ping_running(servers, by_name):
+    """Ping en parallèle des serveurs dont le conteneur tourne : {slug: résultat}."""
+    running = [s for s in servers if (by_name.get(s.container_name) or {}).get("State") == "running"]
+    if not running:
+        return {}
+    with ThreadPoolExecutor(max_workers=min(8, len(running))) as pool:
+        return dict(zip([s.slug for s in running], pool.map(lambda s: ping(s.port), running)))
+
+
 def collect(servers):
     """État de plusieurs serveurs : un seul `podman ps`, pings en parallèle."""
     servers = list(servers)
     try:
-        try:
-            ps_all = podman.ps_json()
-        except podman.PodmanError:
-            ps_all = podman.ps_json()  # un conteneur recréé à l'instant peut faire échouer ps
+        by_name = ps_by_name()
     except podman.PodmanError as exc:
         label, color = STATES["unknown"]
         return {s.slug: {"key": "unknown", "label": label, "color": color, "job": s.job,
-                         "error": str(exc), "detail": "", "warning": ""} for s in servers}
-    by_name = {n: c for c in ps_all for n in (c.get("Names") or [])}
-    running = [s for s in servers if by_name.get(s.container_name, {}).get("State") == "running"]
-    with ThreadPoolExecutor(max_workers=max(1, min(8, len(running)))) as pool:
-        pongs = dict(zip([s.slug for s in running], pool.map(lambda s: ping(s.port), running)))
-    out = {}
-    for s in servers:
-        try:
-            key, info = _compute(s, by_name.get(s.container_name), pongs.get(s.slug))
-        except podman.PodmanError as exc:
-            key, info = "unknown", {"error": str(exc)}
-        _record(s, key, info)
-        label, color = STATES[key]
-        out[s.slug] = {"key": key, "label": label, "color": color, "job": s.job, **info}
-    return out
+                         "error": str(exc), "detail": "", "warning": "", **backup_info(s)} for s in servers}
+    pongs = ping_running(servers, by_name)
+    return {s.slug: describe(s, by_name.get(s.container_name), pongs.get(s.slug)) for s in servers}
 
 
 def for_server(server):

@@ -1,3 +1,5 @@
+import asyncio
+import json
 import logging
 import shlex
 import shutil
@@ -17,7 +19,7 @@ from django.views.decorators.http import require_POST
 from django.urls import reverse
 from django.utils.http import urlencode
 
-from . import backups, configs, jobs, monitoring, podman, scheduler, status, upnp
+from . import backups, configs, hub, jobs, monitoring, podman, scheduler, status, upnp
 from .forms import AppSettingsForm, BackupScheduleForm, CommandForm, PlayerForm, ServerCreateForm, ServerForm, next_free_port
 from .models import AppSettings, DefaultWhitelistEntry, Server, WhitelistEntry, cf_key_file
 
@@ -50,7 +52,7 @@ def server_list(request):
 
 @login_required
 def status_json(request):
-    """État de tous les serveurs, interrogé par les pages toutes les quelques secondes."""
+    """État de tous les serveurs (les pages reçoivent les changements par le flux `events`)."""
     statuses = status.collect(Server.objects.all())
     return JsonResponse({k: status.as_json(v) for k, v in statuses.items()})
 
@@ -496,8 +498,50 @@ def backup_download(request, slug, name):
         backups.snapshot_path(server, name)
     except FileNotFoundError:
         raise Http404
-    response = StreamingHttpResponse(backups.stream_tar(server, name), content_type="application/gzip")
+    command = backups.tar_command(server, name)
+    response = StreamingHttpResponse(_command_output(command), content_type="application/gzip")
     response["Content-Disposition"] = f'attachment; filename="{server.slug}-{name}.tar.gz"'
+    return response
+
+
+async def _command_output(command):
+    """Sortie d'une commande, envoyée au fil de l'eau ; la commande est tuée si le client part."""
+    proc = await asyncio.create_subprocess_exec(
+        *command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
+    )
+    try:
+        while chunk := await proc.stdout.read(256 * 1024):
+            yield chunk
+        await proc.wait()
+    finally:
+        if proc.returncode is None:
+            proc.kill()
+
+
+async def events(request):
+    """Flux Server-Sent Events : état des serveurs, logs et mesures, poussés par le serveur."""
+    user = await request.auser()
+    if not user.is_authenticated:
+        return HttpResponse(status=204)  # 204 : le navigateur arrête de se reconnecter
+    slug = request.GET.get("slug") or None
+    sub = hub.subscribe(slug, logs=bool(slug) and request.GET.get("logs") == "1")
+
+    async def stream():
+        try:
+            yield "retry: 3000\n\n"
+            while not sub.closed:
+                try:
+                    event, data = await asyncio.wait_for(sub.queue.get(), hub.HEARTBEAT)
+                except TimeoutError:
+                    yield ": ping\n\n"  # garde la connexion ouverte et détecte les départs
+                    continue
+                yield f"event: {event}\ndata: {json.dumps(data, separators=(',', ':'))}\n\n"
+        finally:
+            hub.unsubscribe(sub)
+
+    response = StreamingHttpResponse(stream(), content_type="text/event-stream")
+    response["Cache-Control"] = "no-cache"
+    response["X-Accel-Buffering"] = "no"
     return response
 
 
