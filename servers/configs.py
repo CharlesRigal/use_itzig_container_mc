@@ -54,8 +54,60 @@ def _resolve(server, rel):
     return server.data_dir / rel
 
 
+# Forge réécrit les configs « par monde » (world/serverconfig) avec ses valeurs en mémoire
+# quand le serveur s'arrête : modifiées pendant qu'il tourne, elles seraient perdues. Elles sont
+# donc mises en attente et copiées au prochain démarrage, serveur arrêté (podman.start).
+PENDING_DIR = ".mcmanager/pending"
+
+
+def needs_cold_write(rel):
+    return "/serverconfig/" in f"/{rel}"
+
+
+def _pending_path(server, rel):
+    return server.data_dir / PENDING_DIR / rel
+
+
+def is_pending(server, rel):
+    return _pending_path(server, rel).is_file()
+
+
+def pending_files(server):
+    root = server.data_dir / PENDING_DIR
+    if not root.is_dir():
+        return []
+    return sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file())
+
+
+def apply_pending(server):
+    """Copie les modifications en attente (à n'appeler que serveur arrêté). Renvoie leur liste."""
+    applied = []
+    for rel in pending_files(server):
+        src = _pending_path(server, rel)
+        dst = server.data_dir / rel
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(src, dst)
+        src.unlink()
+        applied.append(rel)
+    return applied
+
+
+def edited_files(server):
+    """Fichiers déjà modifiés depuis l'éditeur (ils ont un historique)."""
+    root = _history_root(server)
+    if not root.is_dir():
+        return set()
+    return {
+        p.relative_to(d).as_posix()
+        for d in root.iterdir() if SNAPSHOT_TS.match(d.name)
+        for p in d.rglob("*") if p.is_file()
+    }
+
+
 def read(server, rel):
     path = _resolve(server, rel)
+    if is_pending(server, rel):
+        return _pending_path(server, rel).read_text(encoding="utf-8")
     if path.stat().st_size > MAX_SIZE:
         raise ConfigError("Fichier trop gros pour l'éditeur (> 1 Mo).")
     try:
@@ -88,12 +140,22 @@ def _snapshot(server, rel):
     return ts
 
 
-def save(server, rel, content):
+def save(server, rel, content, running=False):
+    """Enregistre ; renvoie "pending" si la modification attend le prochain démarrage."""
     path = _resolve(server, rel)
     content = content.replace("\r\n", "\n")
     validate(rel, content)
+    pending = _pending_path(server, rel)
+    if running and needs_cold_write(rel):
+        if not pending.is_file():
+            _snapshot(server, rel)  # la version en service, avant la première modification
+        pending.parent.mkdir(parents=True, exist_ok=True)
+        pending.write_text(content, encoding="utf-8")
+        return "pending"
     _snapshot(server, rel)
     path.write_text(content, encoding="utf-8")
+    pending.unlink(missing_ok=True)
+    return "saved"
 
 
 def history(server, rel):
@@ -106,11 +168,11 @@ def history(server, rel):
     )
 
 
-def restore(server, rel, ts):
+def restore(server, rel, ts, running=False):
     if not SNAPSHOT_TS.match(ts) or ts not in history(server, rel):
         raise ConfigError("Version introuvable.")
     content = (_history_root(server) / ts / rel).read_text(encoding="utf-8")
-    save(server, rel, content)
+    return save(server, rel, content, running=running)
 
 
 def installed_mods(server):

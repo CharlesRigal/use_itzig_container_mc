@@ -3,6 +3,9 @@
 {% block content %}
 <p><a href="{% url 'server_files' server.slug %}">← fichiers de {{ server.name }}</a></p>
 <h1 style="word-break:break-all"><code>{{ rel }}</code></h1>
+{% if pending %}
+<p class="sub"><span class="warn">⏳ Modification en attente : elle sera copiée au prochain démarrage du serveur (le jeu réécrit ce fichier quand il s'arrête). Le texte ci-dessous est la version en attente.</span></p>
+{% endif %}
 {% if managed %}
 <p class="messages"><span class="muted">Ces clés sont réécrites à chaque démarrage depuis les paramètres du serveur, ne les change pas ici : {{ managed|join:", " }}.</span></p>
 {% endif %}

@@ -9,13 +9,15 @@
     {% if files %}
     <ul id="files" style="list-style:none;padding:0;margin:0">
       {% for f in files %}
-      <li style="padding:4px 0;border-bottom:1px solid var(--line)"><a href="{% url 'file_edit' server.slug %}?path={{ f|urlencode }}"><code>{{ f }}</code></a></li>
+      <li style="padding:4px 0;border-bottom:1px solid var(--line)"><a href="{% url 'file_edit' server.slug %}?path={{ f|urlencode }}"><code>{{ f }}</code></a>{% if f in pending %} <span class="warn" style="color:var(--warn);font-size:.85rem">⏳ en attente du prochain démarrage</span>{% endif %}</li>
       {% endfor %}
     </ul>
     {% else %}
     <p class="muted">Aucun fichier pour l'instant : démarre le serveur une fois pour que les mods génèrent leurs configs.</p>
     {% endif %}
-    <p class="helptext" style="margin-top:10px">Les configs « par monde » des mods Forge/NeoForge sont dans <code>world/serverconfig</code>, celles par défaut dans <code>defaultconfigs</code>.</p>
+    <p class="helptext" style="margin-top:10px">Les configs « par monde » des mods Forge/NeoForge sont dans <code>world/serverconfig</code>, celles par défaut dans <code>defaultconfigs</code>.
+      Le jeu réécrit celles de <code>world/serverconfig</code> à l'arrêt : modifiées pendant qu'il tourne, elles sont mises en attente et appliquées au démarrage suivant.
+      Toute modification demande un redémarrage. Une config modifiée ici n'est pas écrasée par les mises à jour du modpack.</p>
   </section>
   <section class="panel">
     <h2>Mods installés</h2>

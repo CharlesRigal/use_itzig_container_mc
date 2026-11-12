@@ -1,12 +1,14 @@
 """Pilotage des conteneurs itzg/minecraft-server via la CLI podman (rootless)."""
 
 import json
+import logging
 import subprocess
 
-from . import curseforge
+from . import configs, curseforge
 from .models import CF_KEY_IN_CONTAINER, cf_key_file
 
 LABEL = "mcmanager=1"
+log = logging.getLogger("servers")
 
 
 class PodmanError(Exception):
@@ -114,6 +116,10 @@ def start(server):
             curseforge.prepare_modpack(server)
         except curseforge.CurseForgeError as exc:
             raise PodmanError(f"Modpack CurseForge : {exc}") from exc
+    stop(server)  # les configs en attente ne s'écrivent que serveur arrêté
+    applied = configs.apply_pending(server)
+    if applied:
+        log.info("%s : configs en attente appliquées : %s", server.slug, ", ".join(applied))
     recreate(server)
     _run(["start", server.container_name])
 

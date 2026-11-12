@@ -309,8 +309,24 @@ def server_files(request, slug):
     return render(
         request,
         "servers/files.html",
-        {"server": server, "files": configs.list_files(server), "mods": configs.installed_mods(server)},
+        {"server": server, "files": configs.list_files(server), "mods": configs.installed_mods(server),
+         "pending": configs.pending_files(server)},
     )
+
+
+def _container_up(server):
+    """Le jeu tourne (ou démarre) : il pourrait réécrire ses configs à l'arrêt."""
+    try:
+        return podman.state(server)["state"] in ("running", "paused", "stopping")
+    except podman.PodmanError:
+        return True  # dans le doute, on ne risque pas une modification perdue
+
+
+def _saved_message(rel, result):
+    if result == "pending":
+        return (f"{rel} enregistré, en attente : le jeu réécrit ce fichier quand il s'arrête, "
+                "la modification sera donc copiée au prochain démarrage. Redémarre le serveur pour l'appliquer.")
+    return f"{rel} enregistré. Redémarre le serveur pour l'appliquer (s'il tourne)."
 
 
 @login_required
@@ -321,11 +337,11 @@ def file_edit(request, slug):
     if request.method == "POST":
         content = request.POST.get("content", "")
         try:
-            configs.save(server, rel, content)
+            result = configs.save(server, rel, content, running=_container_up(server))
         except configs.ConfigError as exc:
             messages.error(request, str(exc))
         else:
-            messages.success(request, f"{rel} enregistré. Redémarre le serveur pour l'appliquer.")
+            messages.success(request, _saved_message(rel, result))
             return redirect(f"{request.path}?{urlencode({'path': rel})}")
     try:
         if content is None:
@@ -341,6 +357,7 @@ def file_edit(request, slug):
             "rel": rel,
             "content": content,
             "history": configs.history(server, rel),
+            "pending": configs.is_pending(server, rel),
             "managed": configs.MANAGED_PROPERTIES if rel == "server.properties" else None,
         },
     )
@@ -352,11 +369,11 @@ def file_restore(request, slug):
     server = get_object_or_404(Server, slug=slug)
     rel, ts = request.GET.get("path", ""), request.POST.get("ts", "")
     try:
-        configs.restore(server, rel, ts)
+        result = configs.restore(server, rel, ts, running=_container_up(server))
     except configs.ConfigError as exc:
         messages.error(request, str(exc))
     else:
-        messages.success(request, f"Version du {ts} restaurée (la version remplacée est gardée dans l'historique).")
+        messages.success(request, f"Version du {ts} restaurée. " + _saved_message(rel, result))
     return redirect(f"{reverse('file_edit', args=[slug])}?{urlencode({'path': rel})}")
 
 

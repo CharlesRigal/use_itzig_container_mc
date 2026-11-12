@@ -7,6 +7,7 @@ mods depuis le manifest (CF_MODPACK_MANIFEST), qui ne contient que des ids.
 """
 
 import json
+import logging
 import re
 import shutil
 import subprocess
@@ -16,7 +17,10 @@ import urllib.request
 import zipfile
 from pathlib import Path
 
+from . import configs
 from .models import cf_key_file
+
+log = logging.getLogger("servers")
 
 API = "https://api.curseforge.com/v1"
 CFWIDGET = "https://api.cfwidget.com/minecraft/modpacks/"
@@ -148,15 +152,25 @@ def prepare_modpack(server):
         (work / "manifest.json").write_text(json.dumps(manifest, indent=2))
         overrides = manifest.get("overrides", "overrides").strip("/") + "/"
         root = server.data_dir.resolve()
+        # Une config modifiée dans l'éditeur garde la version de l'utilisateur à chaque mise à jour du pack.
+        edited = configs.edited_files(server)
+        kept = []
         for info in z.infolist():
             if info.is_dir() or not info.filename.startswith(overrides):
                 continue
-            target = (root / info.filename[len(overrides):]).resolve()
+            rel = info.filename[len(overrides):]
+            target = (root / rel).resolve()
             if root not in target.parents:
                 continue  # chemin hors du dossier du serveur : ignoré
+            if rel in edited and target.is_file():
+                kept.append(rel)
+                continue
             target.parent.mkdir(parents=True, exist_ok=True)
             with z.open(info) as src, open(target, "wb") as dst:
                 shutil.copyfileobj(src, dst)
+        (work / "overrides-kept.txt").write_text("".join(f"{r}\n" for r in kept))
+        if kept:
+            log.info("%s : mise à jour du pack, configs modifiées conservées : %s", server.slug, ", ".join(kept))
 
     for old in work.glob("modpack-*.zip"):
         if old != archive:
